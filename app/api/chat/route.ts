@@ -1,4 +1,4 @@
-import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai'
+import { streamText, convertToModelMessages, UIMessage, stepCountIs } from 'ai'
 import { createGroq } from '@ai-sdk/groq'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 import {
@@ -10,8 +10,11 @@ import {
   decisionCoachTool,
 } from '@/lib/tools'
 
-// Only expose the tools the chatbot actually needs — Groq has limits on tool count
-const tools = {
+const groq = createGroq()
+
+export const maxDuration = 60
+
+const chatTools = {
   getTransactions: getTransactionsTool,
   getMonthlySummary: getMonthlySummaryTool,
   getWeeklyTrend: getWeeklyTrendTool,
@@ -20,35 +23,45 @@ const tools = {
   decisionCoach: decisionCoachTool,
 }
 
-const groq = createGroq()
+function buildSystem(userId: number, snapshot: string) {
+  return `You are MoneyMind AI — a sharp financial behavior coach with live access to the user's real spending data.
 
-export const maxDuration = 60
+The current user_id is ${userId}. ALWAYS pass user_id: ${userId} when calling any tool.
 
-const MONEYMIND_SYSTEM = `You are MoneyMind AI — a financial behavior coach with access to the user's real spending data via tools.
-
-RULES:
-1. ALWAYS call a tool before answering — never reply from memory alone.
-2. For general questions about spending, call getMonthlySummary or getTransactions first.
-3. For pattern/habit questions, call detectBehavior.
-4. For "should I buy" questions, call decisionCoach with item, amount, and category.
-5. For trends, call getWeeklyTrend.
-6. For a score/rating, call getSpendingScore.
-
-RESPONSE STYLE:
-- Reference real numbers from tool results in every reply.
-- Explain behavior, not just numbers. E.g. "You've ordered food 5x this week — that's a habit forming."
-- Be direct and slightly strict when spending looks risky.
+MANDATORY RULES:
+- You MUST call at least one tool before answering any finance question.
+- For spending / budget questions → call getMonthlySummary
+- For transaction history → call getTransactions
+- For habits / patterns → call detectBehavior
+- For trends → call getWeeklyTrend
+- For a financial score → call getSpendingScore
+- For "should I buy X" questions → call decisionCoach with amount, merchant, and category
+- After the tool returns data, write a clear, specific response using real numbers from the result.
+- Never say "I don't have access" — you DO have access via tools.
 - End every response with one concrete action the user can take today.
-- Keep responses concise — 3-5 sentences unless detail is needed.`
+
+${snapshot}`
+}
 
 export async function POST(req: Request) {
-  const body = await req.json()
-  const messages: UIMessage[] = body.messages ?? []
-  const userId: number = parseInt(String(body.user_id ?? 1), 10) || 1
+  let body: { messages?: UIMessage[]; user_id?: number } = {}
 
-  // Inject live user snapshot as context so the AI has baseline data even before
-  // calling tools (reduces unnecessary first-turn tool calls)
-  let liveContext = ''
+  try {
+    body = await req.json()
+  } catch {
+    return new Response(
+      JSON.stringify({ error: 'Invalid request body' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  const messages: UIMessage[] = body.messages ?? []
+  const userId = parseInt(String(body.user_id ?? 1), 10) || 1
+
+  console.log('[v0] /api/chat — userId:', userId, 'messages:', messages.length)
+
+  // Build live snapshot injected into system prompt
+  let snapshot = ''
   try {
     const [user, stats, categories, flagged] = await Promise.all([
       getUser(userId),
@@ -56,40 +69,78 @@ export async function POST(req: Request) {
       getCategoryBreakdown(userId, 30),
       getFlaggedTransactions(userId, 10),
     ])
+
     const day = new Date().getDate()
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
-    const projected =
-      day > 0 ? ((Number(stats.total_spent) / day) * daysInMonth).toFixed(0) : '0'
+    const spent = Number(stats?.total_spent ?? 0)
+    const budget = Number(user?.monthly_budget ?? 0)
+    const projected = day > 0 ? ((spent / day) * daysInMonth).toFixed(0) : '0'
+    const remaining = (budget - spent).toFixed(0)
 
-    liveContext = `
-
---- LIVE USER SNAPSHOT (always use this as baseline) ---
-Current user_id: ${userId} (ALWAYS pass this as user_id when calling tools)
-User: ${user?.name ?? 'User'} | Budget: $${user?.monthly_budget}/mo | Income: $${user?.monthly_income}/mo
-Month progress: Day ${day}/${daysInMonth} | Spent: $${stats.total_spent} | Projected: $${projected}
-Budget remaining: $${(Number(user?.monthly_budget ?? 0) - Number(stats.total_spent)).toFixed(0)}
-Transactions: ${stats.transaction_count} total | Flagged: ${stats.flagged_count} ($${stats.flagged_amount})
-Top categories: ${categories
-      .slice(0, 4)
-      .map((c) => `${c.category} $${c.total} (${c.count}x)`)
-      .join(' | ')}
-Recent flagged: ${flagged
-      .slice(0, 3)
-      .map((f) => `${f.merchant} $${f.amount} [${f.flag_reason}]`)
-      .join(', ')}
+    snapshot = `--- LIVE SNAPSHOT (use as context, then call tools for deeper data) ---
+User: ${user?.name ?? 'Unknown'} | user_id: ${userId}
+Budget: $${budget}/mo | Income: $${user?.monthly_income ?? 0}/mo
+Spent this month: $${spent.toFixed(2)} | Remaining: $${remaining} | Projected: $${projected}
+Day ${day}/${daysInMonth} | Transactions: ${stats?.transaction_count ?? 0} | Flagged: ${stats?.flagged_count ?? 0}
+Top categories: ${(categories ?? []).slice(0, 4).map(c => `${c.category} $${Number(c.total).toFixed(0)} (${c.count}x)`).join(', ')}
+Recent flagged: ${(flagged ?? []).slice(0, 3).map(f => `${f.merchant} $${f.amount} [${f.flag_reason}]`).join(', ') || 'none'}
 ---`
-  } catch {
-    // Proceed without snapshot if DB is unreachable
+
+    console.log('[v0] /api/chat snapshot built — user:', user?.name, 'spent:', spent)
+  } catch (dbErr) {
+    console.error('[v0] /api/chat DB snapshot failed:', dbErr)
+    snapshot = `--- SNAPSHOT UNAVAILABLE (use tools to fetch live data) ---`
   }
 
-  const result = streamText({
-    model: groq('llama-3.3-70b-versatile'),
-    system: MONEYMIND_SYSTEM + liveContext,
-    messages: await convertToModelMessages(messages),
-    tools,
-    stopWhen: stepCountIs(10),
-    abortSignal: req.signal,
-  })
+  // Convert UI messages to model messages
+  let modelMessages
+  try {
+    modelMessages = await convertToModelMessages(messages)
+  } catch (convErr) {
+    console.error('[v0] /api/chat convertToModelMessages failed:', convErr)
+    modelMessages = []
+  }
 
-  return result.toUIMessageStreamResponse()
+  console.log('[v0] /api/chat calling streamText with', modelMessages.length, 'model messages')
+
+  try {
+    const result = streamText({
+      model: groq('llama-3.3-70b-versatile'),
+      system: buildSystem(userId, snapshot),
+      messages: modelMessages,
+      tools: chatTools,
+      maxSteps: 5,
+      onError: (err) => {
+        console.error('[v0] /api/chat streamText error:', err)
+      },
+      onFinish: ({ text, toolCalls }) => {
+        console.log('[v0] /api/chat finished — text length:', text.length, 'toolCalls:', toolCalls?.length ?? 0)
+      },
+    })
+
+    return result.toUIMessageStreamResponse({
+      sendError: true,
+    })
+  } catch (streamErr) {
+    console.error('[v0] /api/chat streamText threw:', streamErr)
+
+    // Return a fallback SSE stream with a safe message
+    const fallback = "I couldn't fully analyze your data right now, but based on general patterns, you should review your recent spending and avoid unnecessary expenses. Try asking me again in a moment."
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'text-delta', textDelta: fallback })}\n\n`))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    })
+  }
 }
