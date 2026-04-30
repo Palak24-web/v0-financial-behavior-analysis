@@ -95,13 +95,22 @@ export function DecisionCoach() {
       const res = await fetch('/api/decision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item: item.trim(), amount: parseFloat(amount), category }),
+        body: JSON.stringify({
+          item: item.trim(),
+          amount: parseFloat(amount),
+          category,
+          user_id: 1,
+        }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Something went wrong')
-      setResult(data)
+      // Always show result — the route now returns 200 with a valid object even on errors
+      if (data.verdict) {
+        setResult(data)
+      } else {
+        throw new Error(data.error ?? 'Could not analyze purchase')
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to get decision')
+      setError(err instanceof Error ? err.message : 'Failed to get decision. Please try again.')
     } finally {
       setLoading(false)
     }

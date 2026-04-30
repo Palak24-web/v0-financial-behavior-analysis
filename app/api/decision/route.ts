@@ -11,30 +11,41 @@ export const maxDuration = 30
 // Body: { item: string, amount: number, category: string, user_id?: number }
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { item, amount, category, user_id = 1 } = body
+    let body: Record<string, unknown>
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+    }
 
-    if (!item || !amount || !category) {
-      return NextResponse.json(
-        { error: 'item, amount, and category are required' },
-        { status: 400 }
-      )
+    console.log('[v0] /api/decision body:', JSON.stringify(body))
+
+    const item = String(body.item ?? '').trim()
+    const amount = body.amount
+    const category = String(body.category ?? 'Misc').trim() || 'Misc'
+    const userId = parseInt(String(body.user_id ?? 1), 10) || 1
+
+    if (!item) {
+      return NextResponse.json({ error: 'item is required' }, { status: 400 })
+    }
+    if (!amount) {
+      return NextResponse.json({ error: 'amount is required' }, { status: 400 })
     }
 
     const parsedAmount = parseFloat(String(amount))
-    const userId = parseInt(String(user_id), 10)
-
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 })
     }
 
     // Fetch live user data from Neon
+    console.log('[v0] /api/decision fetching DB for userId:', userId)
     const [user, stats, categories, flagged] = await Promise.all([
       getUser(userId),
       getMonthlyStats(userId),
       getCategoryBreakdown(userId, 30),
       getFlaggedTransactions(userId, 20),
     ])
+    console.log('[v0] /api/decision DB result — user:', user?.name, 'stats:', JSON.stringify(stats))
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
@@ -104,27 +115,35 @@ Respond with this exact JSON shape (no markdown code blocks, just raw JSON):
     })
 
     // Parse the AI response — strip any accidental markdown fencing
+    console.log('[v0] /api/decision AI raw text:', result.text.slice(0, 300))
     let output: {
       verdict: string; risk_level: string; risk_score: number; headline: string
       reasoning: string; budget_impact: string; alternative: string | null; coaching_tip: string
     }
     try {
-      const raw = result.text.replace(/```json\n?|```\n?/g, '').trim()
+      // Extract JSON robustly — handle ```json, ```, or bare JSON
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/)
+      const raw = jsonMatch ? jsonMatch[0] : result.text.replace(/```[\w]*\n?|```/g, '').trim()
       output = JSON.parse(raw)
-    } catch {
-      // Fallback: derive verdict from the raw numbers if JSON parse fails
+      // Validate required fields
+      if (!output.verdict || !output.risk_level) throw new Error('Missing required fields')
+    } catch (parseErr) {
+      console.log('[v0] /api/decision JSON parse failed, using fallback. Error:', parseErr)
+      // Fallback: derive verdict from live numbers
       const risk = wouldExceedBudget ? 'high' : parsedAmount > remaining * 0.5 ? 'medium' : 'low'
       output = {
         verdict: wouldExceedBudget ? 'skip' : risk === 'medium' ? 'delay' : 'buy',
         risk_level: risk,
         risk_score: wouldExceedBudget ? 80 : risk === 'medium' ? 55 : 25,
         headline: wouldExceedBudget
-          ? `Buying this would push you $${(spent + parsedAmount - budget).toFixed(0)} over budget.`
-          : `You have $${remaining.toFixed(0)} remaining — this is ${purchasePct}% of your budget.`,
-        reasoning: `Your budget is $${budget} and you've spent $${spent.toFixed(2)} so far this month.`,
-        budget_impact: `$${remaining.toFixed(2)} remaining after this purchase.`,
-        alternative: null,
-        coaching_tip: `You have ${flaggedCount} flagged transactions this month. Stay mindful.`,
+          ? `Buying this would push you $${(spent + parsedAmount - budget).toFixed(0)} over your $${budget} budget.`
+          : `You have $${Number(remaining).toFixed(0)} remaining — this is ${purchasePct}% of your budget.`,
+        reasoning: `Your budget is $${budget} and you have spent $${spent.toFixed(2)} so far this month (day ${new Date().getDate()}). This purchase of $${parsedAmount.toFixed(2)} would bring your total to $${(spent + parsedAmount).toFixed(2)}.`,
+        budget_impact: `Budget remaining after purchase: $${(remaining - parsedAmount).toFixed(2)}.`,
+        alternative: risk !== 'low' ? `Consider delaying this to next month or finding a lower-cost option.` : null,
+        coaching_tip: flaggedCount > 2
+          ? `You have ${flaggedCount} flagged transactions this month — stay mindful of impulse buys.`
+          : `Track this expense carefully to stay on your $${budget} monthly budget.`,
       }
     }
 
@@ -151,7 +170,19 @@ Respond with this exact JSON shape (no markdown code blocks, just raw JSON):
       },
     })
   } catch (error) {
-    console.error('[POST /api/decision]', error)
-    return NextResponse.json({ error: 'Decision analysis failed' }, { status: 500 })
+    console.error('[v0] /api/decision error:', error)
+    // Always return a valid JSON response — never let the UI show a raw crash
+    return NextResponse.json({
+      verdict: 'delay',
+      risk_level: 'unknown',
+      risk_score: 50,
+      headline: 'Unable to complete full analysis right now.',
+      reasoning: 'There was an issue connecting to the data source. Please try again.',
+      budget_impact: 'Unknown',
+      alternative: 'Try again in a moment.',
+      coaching_tip: 'When in doubt, wait 24 hours before any non-essential purchase.',
+      context: { budget: 0, spent: 0, remaining: '0', projected_month_end: '0', would_exceed_budget: false, flagged_count: 0, category_spend: '0' },
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }, { status: 200 }) // Return 200 so the frontend displays the fallback, not an error banner
   }
 }

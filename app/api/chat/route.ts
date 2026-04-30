@@ -94,6 +94,8 @@ export async function POST(req: Request) {
   const messages: UIMessage[] = body.messages ?? []
   const userId: number = parseInt(String(body.user_id ?? 1), 10) || 1
 
+  console.log('[v0] /api/chat — userId:', userId, 'messages:', messages.length, 'tools available:', Object.keys(tools).join(', '))
+
   // Inject live user snapshot as context so the AI has baseline data even before
   // calling tools (reduces unnecessary first-turn tool calls)
   let liveContext = ''
@@ -104,6 +106,7 @@ export async function POST(req: Request) {
       getCategoryBreakdown(userId, 30),
       getFlaggedTransactions(userId, 10),
     ])
+    console.log('[v0] /api/chat DB snapshot — user:', user?.name, 'spent:', stats?.total_spent, 'transactions:', stats?.transaction_count)
     const day = new Date().getDate()
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
     const projected =
