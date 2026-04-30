@@ -1,113 +1,153 @@
 'use client'
 
 import { useState } from 'react'
-import { TrendingUp, TrendingDown, AlertTriangle, Target, Zap, ShoppingBag, Coffee, Plane, CreditCard, BarChart3 } from 'lucide-react'
+import useSWR from 'swr'
+import { TrendingUp, TrendingDown, AlertTriangle, Target, Zap, CreditCard, BarChart3, Coffee, ShoppingBag, Plane, DollarSign } from 'lucide-react'
 import { WeeklyAreaChart, MonthlyBarChart, CategoryPieChart, StackedWeeklyChart } from './spending-chart'
 
-const stats = [
-  {
-    label: 'Total Spent',
-    value: '$2,340',
-    change: '+12.4%',
-    trend: 'up',
-    sub: 'vs last month',
-    icon: CreditCard,
-    color: 'text-danger',
-  },
-  {
-    label: 'Potential Savings',
-    value: '$468',
-    change: '-20%',
-    trend: 'down',
-    sub: 'if you follow tips',
-    icon: Target,
-    color: 'text-success',
-  },
-  {
-    label: 'Behavior Score',
-    value: '62/100',
-    change: '+8pts',
-    trend: 'up',
-    sub: 'improving this month',
-    icon: Zap,
-    color: 'text-warning',
-  },
-  {
-    label: 'Anomalies Found',
-    value: '3',
-    change: 'flagged',
-    trend: 'neutral',
-    sub: 'unusual transactions',
-    icon: AlertTriangle,
-    color: 'text-danger',
-  },
-]
+const fetcher = (url: string) => fetch(url).then(r => r.json())
 
-const recentTransactions = [
-  { icon: Coffee, merchant: 'Zomato', category: 'Food', amount: -45.50, date: 'Today, 10:15 PM', flag: 'late-night' },
-  { icon: ShoppingBag, merchant: 'Amazon', category: 'Shopping', amount: -89.99, date: 'Yesterday', flag: 'impulse' },
-  { icon: Plane, merchant: 'Uber', category: 'Travel', amount: -28.00, date: 'Apr 23', flag: null },
-  { icon: Coffee, merchant: 'Swiggy', category: 'Food', amount: -35.00, date: 'Apr 25, 11:45 PM', flag: 'late-night' },
-  { icon: CreditCard, merchant: 'Netflix', category: 'Subscription', amount: -12.00, date: 'Apr 27', flag: null },
-]
+const CATEGORY_ICONS: Record<string, typeof Coffee> = {
+  'Food & Drink': Coffee,
+  'Groceries': ShoppingBag,
+  'Shopping': ShoppingBag,
+  'Transport': Plane,
+  'Subscriptions': CreditCard,
+  'Utilities': Zap,
+  'Rent': DollarSign,
+}
 
-const insights = [
-  {
-    type: 'warning',
-    title: 'Weekend Spending Spike',
-    desc: 'You spent 3.2x more on weekends vs weekdays. Saturday alone was $210.',
-    action: 'Set a weekend budget',
-  },
-  {
-    type: 'alert',
-    title: 'Late Night Food Orders',
-    desc: '4 food deliveries placed after 10 PM this week totaling $142. These are often impulse purchases.',
-    action: 'Enable spend lock after 10 PM',
-  },
-  {
-    type: 'info',
-    title: 'Food Delivery Addiction',
-    desc: 'Food accounts for 33% of your total spend. You\'ve ordered delivery 8 times this month.',
-    action: 'Try meal prepping this week',
-  },
-]
+function StatCard({
+  label, value, sub, change, trend, icon: Icon, color,
+}: {
+  label: string; value: string; sub: string; change: string; trend: 'up' | 'down' | 'neutral'; icon: typeof CreditCard; color: string
+}) {
+  const isNegativeTrend = trend === 'up' && (label === 'Total Spent' || label === 'Anomalies Found')
+  const badgeCls = isNegativeTrend
+    ? 'bg-red-500/10 text-red-400'
+    : trend === 'up'
+    ? 'bg-green-500/10 text-green-400'
+    : trend === 'down'
+    ? 'bg-green-500/10 text-green-400'
+    : 'bg-yellow-500/10 text-yellow-400'
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-4">
+      <div className="flex items-start justify-between mb-3">
+        <div className="p-2 rounded-xl bg-secondary">
+          <Icon className={`w-4 h-4 ${color}`} />
+        </div>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-0.5 ${badgeCls}`}>
+          {trend === 'up' ? <TrendingUp className="w-3 h-3" /> : trend === 'down' ? <TrendingDown className="w-3 h-3" /> : null}
+          {change}
+        </span>
+      </div>
+      <p className="text-2xl font-bold text-foreground font-mono">{value}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+      <p className="text-xs text-muted-foreground/60 mt-0.5">{sub}</p>
+    </div>
+  )
+}
 
 type DashboardTab = 'overview' | 'weekly' | 'monthly' | 'categories'
 
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
 
+  const { data: insightsData, isLoading: loadingInsights } = useSWR('/api/insights', fetcher)
+  const { data: txData, isLoading: loadingTx } = useSWR('/api/transactions?type=recent&limit=8', fetcher)
+  const { data: weeklyData } = useSWR('/api/transactions?type=weekly', fetcher)
+  const { data: categoriesData } = useSWR('/api/transactions?type=categories&days=30', fetcher)
+  const { data: dailyData } = useSWR('/api/transactions?type=daily&days=7', fetcher)
+
+  const stats = insightsData?.stats
+  const insights = insightsData?.insights ?? []
+  const transactions = txData?.transactions ?? []
+  const weekly = weeklyData?.weekly ?? []
+  const categories = categoriesData?.categories ?? []
+  const daily = dailyData?.daily ?? []
+
+  const totalSpent = stats?.total_spent ?? 0
+  const budget = stats?.budget ?? 3200
+  const projected = stats?.projected_spend ?? 0
+  const budgetUsedPct = stats?.budget_used_pct ?? 0
+  const daysRemaining = stats?.days_remaining ?? 0
+  const flaggedCount = stats?.flagged_count ?? 0
+  const isOverBudget = stats?.is_over_budget ?? false
+
+  // Build chart data from real DB data
+  const weeklyChartData = weekly.map((w: { week: string; amount: number }) => ({
+    week: w.week,
+    amount: Number(w.amount),
+    savings: Math.max(0, budget / 4 - Number(w.amount)),
+  }))
+
+  const categoryChartData = categories.map((c: { category: string; total: number }) => ({
+    name: c.category,
+    value: Number(c.total),
+  }))
+
+  const dailyChartData = daily.map((d: { day: string; amount: number }) => ({
+    day: d.day,
+    food: 0, shopping: 0, other: Number(d.amount),
+  }))
+
+  const potentialSavings = Math.round(totalSpent * 0.2)
+  const behaviorScore = Math.max(30, Math.min(90, 100 - budgetUsedPct * 0.5 - flaggedCount * 5))
+
+  const statCards = [
+    {
+      label: 'Total Spent',
+      value: `$${Number(totalSpent).toLocaleString()}`,
+      change: budgetUsedPct > 100 ? 'Over Budget' : `${budgetUsedPct}% used`,
+      trend: (budgetUsedPct > 80 ? 'up' : 'down') as 'up' | 'down' | 'neutral',
+      sub: `of $${budget} budget`,
+      icon: CreditCard,
+      color: budgetUsedPct > 80 ? 'text-danger' : 'text-success',
+    },
+    {
+      label: 'Potential Savings',
+      value: `$${potentialSavings.toLocaleString()}`,
+      change: '-20%',
+      trend: 'down' as const,
+      sub: 'if you follow tips',
+      icon: Target,
+      color: 'text-success',
+    },
+    {
+      label: 'Behavior Score',
+      value: `${behaviorScore}/100`,
+      change: flaggedCount > 3 ? 'Needs work' : '+8pts',
+      trend: flaggedCount > 3 ? 'neutral' as const : 'up' as const,
+      sub: flaggedCount > 3 ? 'impulse buying detected' : 'improving this month',
+      icon: Zap,
+      color: 'text-warning',
+    },
+    {
+      label: 'Anomalies Found',
+      value: String(flaggedCount),
+      change: 'flagged',
+      trend: 'neutral' as const,
+      sub: `$${Number(stats?.flagged_amount ?? 0).toFixed(0)} in unusual tx`,
+      icon: AlertTriangle,
+      color: 'text-danger',
+    },
+  ]
+
   return (
     <div className="space-y-6">
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => {
-          const Icon = stat.icon
-          return (
-            <div key={stat.label} className="bg-surface border border-border rounded-2xl p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div className="p-2 rounded-xl bg-secondary">
-                  <Icon className={`w-4 h-4 ${stat.color}`} />
-                </div>
-                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                  stat.trend === 'up' && stat.label === 'Total Spent'
-                    ? 'bg-red-500/10 text-red-400'
-                    : stat.trend === 'up'
-                    ? 'bg-green-500/10 text-green-400'
-                    : stat.trend === 'down'
-                    ? 'bg-green-500/10 text-green-400'
-                    : 'bg-yellow-500/10 text-yellow-400'
-                }`}>
-                  {stat.trend === 'up' ? <TrendingUp className="w-3 h-3 inline mr-0.5" /> : stat.trend === 'down' ? <TrendingDown className="w-3 h-3 inline mr-0.5" /> : null}
-                  {stat.change}
-                </span>
+        {loadingInsights
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-surface border border-border rounded-2xl p-4 animate-pulse">
+                <div className="h-4 w-16 bg-secondary rounded mb-3" />
+                <div className="h-7 w-24 bg-secondary rounded mb-2" />
+                <div className="h-3 w-20 bg-secondary rounded" />
               </div>
-              <p className="text-2xl font-bold text-foreground font-mono">{stat.value}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{stat.label}</p>
-              <p className="text-xs text-muted-foreground/60 mt-0.5">{stat.sub}</p>
-            </div>
-          )
-        })}
+            ))
+          : statCards.map(s => <StatCard key={s.label} {...s} />)
+        }
       </div>
 
       {/* Chart Tabs + Chart */}
@@ -115,7 +155,7 @@ export function Dashboard() {
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div>
             <h3 className="font-semibold text-foreground">Spending Analytics</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Track your financial behavior visually</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Real data from your transaction history</p>
           </div>
           <div className="flex items-center gap-1 bg-secondary rounded-xl p-1">
             {(['overview', 'weekly', 'monthly', 'categories'] as DashboardTab[]).map(tab => (
@@ -133,10 +173,10 @@ export function Dashboard() {
             ))}
           </div>
         </div>
-        {activeTab === 'overview' && <WeeklyAreaChart />}
-        {activeTab === 'weekly' && <StackedWeeklyChart />}
-        {activeTab === 'monthly' && <MonthlyBarChart />}
-        {activeTab === 'categories' && <CategoryPieChart />}
+        {activeTab === 'overview' && <WeeklyAreaChart data={weeklyChartData.length ? weeklyChartData : undefined} />}
+        {activeTab === 'weekly' && <StackedWeeklyChart data={dailyChartData.length ? dailyChartData : undefined} />}
+        {activeTab === 'monthly' && <MonthlyBarChart data={weeklyChartData.length ? weeklyChartData : undefined} />}
+        {activeTab === 'categories' && <CategoryPieChart data={categoryChartData.length ? categoryChartData : undefined} />}
       </div>
 
       {/* Two column: Transactions + Insights */}
@@ -145,35 +185,50 @@ export function Dashboard() {
         <div className="bg-surface border border-border rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-foreground">Recent Transactions</h3>
-            <button className="text-xs text-primary hover:underline">View all</button>
+            <span className="text-xs text-muted-foreground">{transactions.length} shown</span>
           </div>
           <div className="space-y-3">
-            {recentTransactions.map((tx, i) => {
-              const Icon = tx.icon
-              return (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0">
-                    <Icon className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground truncate">{tx.merchant}</p>
-                      {tx.flag && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                          tx.flag === 'late-night'
-                            ? 'bg-orange-500/10 text-orange-400'
-                            : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          {tx.flag === 'late-night' ? 'Late Night' : 'Impulse'}
-                        </span>
-                      )}
+            {loadingTx
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-3 animate-pulse">
+                    <div className="w-9 h-9 rounded-xl bg-secondary flex-shrink-0" />
+                    <div className="flex-1 space-y-1">
+                      <div className="h-3 w-28 bg-secondary rounded" />
+                      <div className="h-2.5 w-20 bg-secondary rounded" />
                     </div>
-                    <p className="text-xs text-muted-foreground">{tx.category} · {tx.date}</p>
+                    <div className="h-3 w-14 bg-secondary rounded" />
                   </div>
-                  <p className="text-sm font-semibold font-mono text-danger flex-shrink-0">{tx.amount}</p>
-                </div>
-              )
-            })}
+                ))
+              : transactions.map((tx: { id: number; merchant: string; category: string; amount: number; date: string; is_flagged: boolean; flag_reason: string | null }) => {
+                  const Icon = CATEGORY_ICONS[tx.category] ?? CreditCard
+                  const dateStr = new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                  return (
+                    <div key={tx.id} className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center flex-shrink-0">
+                        <Icon className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-foreground truncate">{tx.merchant}</p>
+                          {tx.is_flagged && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                              tx.flag_reason === 'late-night'
+                                ? 'bg-orange-500/10 text-orange-400'
+                                : 'bg-red-500/10 text-red-400'
+                            }`}>
+                              {tx.flag_reason === 'late-night' ? 'Late Night' : tx.flag_reason === 'impulse' ? 'Impulse' : 'Flagged'}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{tx.category} · {dateStr}</p>
+                      </div>
+                      <p className="text-sm font-semibold font-mono text-danger flex-shrink-0">
+                        -${Number(tx.amount).toFixed(2)}
+                      </p>
+                    </div>
+                  )
+                })
+            }
           </div>
         </div>
 
@@ -187,30 +242,40 @@ export function Dashboard() {
             </div>
           </div>
           <div className="space-y-3">
-            {insights.map((ins, i) => (
-              <div
-                key={i}
-                className={`p-3 rounded-xl border ${
-                  ins.type === 'warning'
-                    ? 'border-yellow-500/20 bg-yellow-500/5'
-                    : ins.type === 'alert'
-                    ? 'border-red-500/20 bg-red-500/5'
-                    : 'border-blue-500/20 bg-blue-500/5'
-                }`}
-              >
-                <p className={`text-xs font-semibold mb-1 ${
-                  ins.type === 'warning' ? 'text-yellow-400' : ins.type === 'alert' ? 'text-red-400' : 'text-blue-400'
-                }`}>
-                  {ins.type === 'warning' ? '⚠ ' : ins.type === 'alert' ? '! ' : 'i '}{ins.title}
-                </p>
-                <p className="text-xs text-muted-foreground leading-relaxed">{ins.desc}</p>
-                <button className={`text-xs font-medium mt-2 ${
-                  ins.type === 'warning' ? 'text-yellow-400' : ins.type === 'alert' ? 'text-red-400' : 'text-blue-400'
-                }`}>
-                  → {ins.action}
-                </button>
-              </div>
-            ))}
+            {loadingInsights
+              ? Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="p-3 rounded-xl border border-border bg-secondary/20 animate-pulse space-y-2">
+                    <div className="h-3 w-32 bg-secondary rounded" />
+                    <div className="h-2.5 w-full bg-secondary rounded" />
+                    <div className="h-2.5 w-3/4 bg-secondary rounded" />
+                  </div>
+                ))
+              : insights.length > 0
+              ? insights.slice(0, 4).map((ins: { id: number; title: string; description: string; action: string | null; severity: string }) => {
+                  const colorMap: Record<string, string> = {
+                    danger: 'border-red-500/20 bg-red-500/5',
+                    warning: 'border-yellow-500/20 bg-yellow-500/5',
+                    info: 'border-blue-500/20 bg-blue-500/5',
+                  }
+                  const textMap: Record<string, string> = {
+                    danger: 'text-red-400',
+                    warning: 'text-yellow-400',
+                    info: 'text-blue-400',
+                  }
+                  const cls = colorMap[ins.severity] ?? colorMap.info
+                  const txt = textMap[ins.severity] ?? textMap.info
+                  return (
+                    <div key={ins.id} className={`p-3 rounded-xl border ${cls}`}>
+                      <p className={`text-xs font-semibold mb-1 ${txt}`}>{ins.title}</p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">{ins.description}</p>
+                      {ins.action && (
+                        <p className={`text-xs font-medium mt-2 ${txt}`}>→ {ins.action}</p>
+                      )}
+                    </div>
+                  )
+                })
+              : <p className="text-sm text-muted-foreground text-center py-4">No insights yet</p>
+            }
           </div>
         </div>
       </div>
@@ -222,19 +287,31 @@ export function Dashboard() {
             <BarChart3 className="w-4 h-4 text-primary" />
             <h3 className="font-semibold text-foreground">Month-End Prediction</h3>
           </div>
-          <span className="text-xs font-mono text-danger font-semibold">Projected: $3,120 (+33%)</span>
+          <span className={`text-xs font-mono font-semibold ${isOverBudget ? 'text-danger' : 'text-success'}`}>
+            Projected: ${projected.toLocaleString()} {isOverBudget ? '(over budget)' : '(on track)'}
+          </span>
         </div>
         <div className="relative h-3 bg-secondary rounded-full overflow-hidden">
-          <div className="absolute inset-y-0 left-0 bg-primary rounded-full" style={{ width: '75%' }} />
-          <div className="absolute inset-y-0 left-0 bg-danger rounded-full opacity-40" style={{ width: '100%' }} />
+          <div
+            className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all duration-700"
+            style={{ width: `${Math.min(100, budgetUsedPct)}%` }}
+          />
+          {isOverBudget && (
+            <div className="absolute inset-y-0 left-0 bg-danger rounded-full opacity-30" style={{ width: '100%' }} />
+          )}
         </div>
         <div className="flex items-center justify-between mt-2">
           <span className="text-xs text-muted-foreground">$0</span>
-          <span className="text-xs text-muted-foreground">Current: $2,340</span>
-          <span className="text-xs text-danger font-semibold">Limit: $2,400</span>
+          <span className="text-xs text-muted-foreground font-mono">Spent: ${Number(totalSpent).toLocaleString()}</span>
+          <span className={`text-xs font-semibold font-mono ${isOverBudget ? 'text-danger' : 'text-muted-foreground'}`}>
+            Budget: ${budget.toLocaleString()}
+          </span>
         </div>
         <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          At your current spending pace, you will exceed your monthly budget by <span className="text-danger font-semibold">$720</span>. MoneyMind recommends reducing Food and Shopping by 25% for the remaining 2 days.
+          {isOverBudget
+            ? <>At your current pace, you will exceed your budget by <span className="text-danger font-semibold">${(projected - budget).toLocaleString()}</span>. Reduce Food and Shopping spending for the remaining <span className="font-semibold">{daysRemaining} days</span>.</>
+            : <>You are on track to finish within your budget. <span className="text-success font-semibold">${(budget - projected).toLocaleString()}</span> headroom remaining with {daysRemaining} days left.</>
+          }
         </p>
       </div>
     </div>

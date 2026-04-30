@@ -6,6 +6,7 @@ import {
   stepCountIs,
 } from 'ai'
 import { z } from 'zod'
+import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 
 export const maxDuration = 60
 
@@ -180,9 +181,36 @@ function getSavingTip(category: string): string {
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json()
 
+  // Fetch real user data to inject as live context
+  let liveContext = ''
+  try {
+    const [user, stats, categories, flagged] = await Promise.all([
+      getUser(1),
+      getMonthlyStats(1),
+      getCategoryBreakdown(1, 30),
+      getFlaggedTransactions(1),
+    ])
+    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+    const dayOfMonth = new Date().getDate()
+    const projected = ((Number(stats.total_spent) / dayOfMonth) * daysInMonth).toFixed(0)
+
+    liveContext = `
+
+--- LIVE USER DATA (use this for all analysis) ---
+User: ${user?.name ?? 'Alex'} | Budget: $${user?.monthly_budget}/month | Income: $${user?.monthly_income}/month
+This month (day ${dayOfMonth}/${daysInMonth}): $${stats.total_spent} spent across ${stats.transaction_count} transactions
+Flagged transactions: ${stats.flagged_count} suspicious purchases totaling $${stats.flagged_amount}
+Projected month-end: $${projected} (budget: $${user?.monthly_budget})
+Category breakdown: ${categories.map(c => `${c.category}: $${c.total} (${c.count}x)`).join(' | ')}
+Recent flagged: ${flagged.slice(0, 3).map(f => `${f.merchant} $${f.amount} [${f.flag_reason}]`).join(', ')}
+---`
+  } catch {
+    // If DB fails, proceed without context
+  }
+
   const result = streamText({
     model: 'openai/gpt-4o-mini',
-    system: MONEYMIND_SYSTEM,
+    system: MONEYMIND_SYSTEM + liveContext,
     messages: await convertToModelMessages(messages),
     tools,
     stopWhen: stepCountIs(10),
