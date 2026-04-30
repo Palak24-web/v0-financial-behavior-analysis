@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Sparkles, LayoutDashboard, MessageSquare, Code2, Brain, TrendingUp, Shield, Zap, ChevronRight, ExternalLink } from 'lucide-react'
 import { Dashboard } from '@/components/dashboard'
 import { Chatbot } from '@/components/chatbot'
+import { DecisionCoach } from '@/components/decision-coach'
 
 type Tab = 'dashboard' | 'chat' | 'api'
 
@@ -246,14 +247,15 @@ export default function Home() {
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed max-w-lg">
                   MoneyMind analyzes your spending patterns, detects behavioral habits, and coaches you toward smarter financial decisions — powered by GPT-4o.
                 </p>
-                <div className="flex items-center gap-3 mt-4">
+                <div className="flex items-center gap-3 mt-4 flex-wrap">
                   <button
                     onClick={() => setActiveTab('chat')}
-                    className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity"
+                    className="flex items-center gap-2 bg-secondary text-foreground px-4 py-2 rounded-xl text-sm font-medium hover:bg-secondary/80 transition-colors border border-border"
                   >
                     <MessageSquare className="w-4 h-4" />
                     Chat with AI
                   </button>
+                  <DecisionCoach />
                   <button
                     onClick={() => setActiveTab('api')}
                     className="flex items-center gap-2 bg-secondary text-foreground px-4 py-2 rounded-xl text-sm font-medium hover:bg-secondary/80 transition-colors border border-border"
