@@ -141,7 +141,7 @@ export function Chatbot() {
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span className="text-xs text-muted-foreground">
-                {isLoading ? 'Thinking...' : 'Online · GPT-4o powered'}
+                {isLoading ? 'Thinking...' : 'Online · Groq powered'}
               </span>
             </div>
           </div>

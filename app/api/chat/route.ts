@@ -1,6 +1,9 @@
 import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai'
+import { createGroq } from '@ai-sdk/groq'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 import { tools } from '@/lib/tools'
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
 
 export const maxDuration = 60
 
@@ -125,7 +128,7 @@ Recent flagged: ${flagged
   }
 
   const result = streamText({
-    model: 'openai/gpt-4o-mini',
+    model: groq('llama-3.3-70b-versatile'),
     system: MONEYMIND_SYSTEM + liveContext,
     messages: await convertToModelMessages(messages),
     tools,

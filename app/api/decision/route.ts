@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText, Output } from 'ai'
+import { createGroq } from '@ai-sdk/groq'
 import { z } from 'zod'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
+
+const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
 
 export const maxDuration = 30
 
@@ -75,7 +78,7 @@ Potential Purchase:
 `.trim()
 
     const result = await generateText({
-      model: 'openai/gpt-4o-mini',
+      model: groq('llama-3.3-70b-versatile'),
       output: Output.object({
         schema: z.object({
           verdict: z.enum(['buy', 'skip', 'delay']),

@@ -54,11 +54,11 @@ type DashboardTab = 'overview' | 'weekly' | 'monthly' | 'categories'
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
 
-  const { data: insightsData, isLoading: loadingInsights } = useSWR('/api/insights', fetcher)
-  const { data: txData, isLoading: loadingTx } = useSWR('/api/transactions?type=recent&limit=8', fetcher)
-  const { data: weeklyData } = useSWR('/api/transactions?type=weekly', fetcher)
-  const { data: categoriesData } = useSWR('/api/transactions?type=categories&days=30', fetcher)
-  const { data: dailyData } = useSWR('/api/transactions?type=daily&days=7', fetcher)
+  const { data: insightsData, isLoading: loadingInsights } = useSWR('/api/insights?user_id=1', fetcher)
+  const { data: txData, isLoading: loadingTx } = useSWR('/api/transactions?user_id=1&type=recent&limit=8', fetcher)
+  const { data: weeklyData } = useSWR('/api/transactions?user_id=1&type=weekly', fetcher)
+  const { data: categoriesData } = useSWR('/api/transactions?user_id=1&type=categories&days=30', fetcher)
+  const { data: dailyData } = useSWR('/api/transactions?user_id=1&type=daily&days=7', fetcher)
 
   const stats = insightsData?.stats
   const insights = insightsData?.insights ?? []
