@@ -124,18 +124,26 @@ function TypingIndicator() {
   )
 }
 
-export function Chatbot() {
+export function Chatbot({ userId = 1, userName = 'User' }: { userId?: number; userName?: string }) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, status, setMessages } = useChat({
+    id: `chat-user-${userId}`,
     transport: new DefaultChatTransport({
       api: '/api/chat',
       prepareSendMessagesRequest: ({ id, messages: msgs }) => ({
-        body: { id, messages: msgs, user_id: 1 },
+        body: { id, messages: msgs, user_id: userId },
       }),
     }),
   })
+
+  // Reset chat when userId changes
+  useEffect(() => {
+    setMessages([])
+    setInput('')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   const isLoading = status === 'streaming' || status === 'submitted'
 
@@ -175,7 +183,7 @@ export function Chatbot() {
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span className="text-xs text-muted-foreground">
-                {isLoading ? 'Thinking...' : 'Online · Groq powered'}
+                {isLoading ? 'Thinking...' : `Analyzing ${userName}'s finances`}
               </span>
             </div>
           </div>

@@ -61,7 +61,7 @@ const RISK_CONFIG = {
   high: { color: 'text-red-400', bar: 'bg-red-500', label: 'High Risk' },
 }
 
-export function DecisionCoach() {
+export function DecisionCoach({ userId = 1 }: { userId?: number }) {
   const [open, setOpen] = useState(false)
   const [item, setItem] = useState('')
   const [amount, setAmount] = useState('')
@@ -99,7 +99,7 @@ export function DecisionCoach() {
           item: item.trim(),
           amount: parseFloat(amount),
           category,
-          user_id: 1,
+          user_id: userId,
         }),
       })
       const data = await res.json()

@@ -1,10 +1,69 @@
 'use client'
 
 import { useState } from 'react'
-import { Sparkles, LayoutDashboard, MessageSquare, Code2, Brain, TrendingUp, Shield, Zap, ChevronRight, ExternalLink } from 'lucide-react'
+import useSWR from 'swr'
+import { Sparkles, LayoutDashboard, MessageSquare, Code2, Brain, TrendingUp, Shield, Zap, ChevronRight, ExternalLink, ChevronDown, User } from 'lucide-react'
 import { Dashboard } from '@/components/dashboard'
 import { Chatbot } from '@/components/chatbot'
 import { DecisionCoach } from '@/components/decision-coach'
+
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
+type AppUser = { id: number; name: string; email: string; monthly_income: string; monthly_budget: string }
+
+function UserSelector({ selected, onChange }: { selected: AppUser | null; onChange: (u: AppUser) => void }) {
+  const [open, setOpen] = useState(false)
+  const { data } = useSWR<{ users: AppUser[] }>('/api/users', fetcher)
+  const users = data?.users ?? []
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-1.5 text-sm hover:border-primary/50 transition-colors"
+      >
+        <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+          <User className="w-3.5 h-3.5 text-primary" />
+        </div>
+        <span className="font-medium text-foreground max-w-[120px] truncate">
+          {selected?.name ?? 'Select user'}
+        </span>
+        <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-2 w-72 bg-surface border border-border rounded-2xl shadow-xl z-50 overflow-hidden">
+            <div className="px-3 py-2 border-b border-border">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Select User</p>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {users.map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => { onChange(u); setOpen(false) }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-secondary/60 transition-colors ${selected?.id === u.id ? 'bg-primary/5 border-l-2 border-primary' : ''}`}
+                >
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 text-xs font-bold text-primary">
+                    {u.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{u.name}</p>
+                    <p className="text-xs text-muted-foreground">Budget ${Number(u.monthly_budget).toLocaleString()}/mo</p>
+                  </div>
+                  {selected?.id === u.id && (
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary ml-auto flex-shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 type Tab = 'dashboard' | 'chat' | 'api'
 
@@ -186,8 +245,11 @@ function ApiDocs() {
   )
 }
 
+const DEFAULT_USER: AppUser = { id: 1, name: 'Alex Morgan', email: 'alex@moneymind.ai', monthly_income: '7500.00', monthly_budget: '3200.00' }
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
+  const [selectedUser, setSelectedUser] = useState<AppUser>(DEFAULT_USER)
 
   return (
     <div className="min-h-screen bg-background">
@@ -226,10 +288,13 @@ export default function Home() {
             ))}
           </nav>
 
-          {/* Status Badge */}
-          <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            AI Agent Active
+          {/* User Selector + Status */}
+          <div className="flex items-center gap-3">
+            <UserSelector selected={selectedUser} onChange={setSelectedUser} />
+            <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              AI Agent Active
+            </div>
           </div>
         </div>
       </header>
@@ -245,7 +310,7 @@ export default function Home() {
                   <span className="text-primary">Behavior Coach</span>
                 </h1>
                 <p className="text-muted-foreground mt-2 text-sm leading-relaxed max-w-lg">
-                  MoneyMind analyzes your spending patterns, detects behavioral habits, and coaches you toward smarter financial decisions — powered by GPT-4o.
+                  Analyzing <span className="text-foreground font-medium">{selectedUser.name}</span>&apos;s spending patterns, behavioral habits, and financial decisions — powered by Groq.
                 </p>
                 <div className="flex items-center gap-3 mt-4 flex-wrap">
                   <button
@@ -255,7 +320,7 @@ export default function Home() {
                     <MessageSquare className="w-4 h-4" />
                     Chat with AI
                   </button>
-                  <DecisionCoach />
+                  <DecisionCoach userId={selectedUser.id} />
                   <button
                     onClick={() => setActiveTab('api')}
                     className="flex items-center gap-2 bg-secondary text-foreground px-4 py-2 rounded-xl text-sm font-medium hover:bg-secondary/80 transition-colors border border-border"
@@ -285,12 +350,12 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'dashboard' && <Dashboard userId={selectedUser.id} />}
 
         {activeTab === 'chat' && (
           <div className="max-w-2xl mx-auto">
             <div className="bg-background border border-border rounded-2xl overflow-hidden" style={{ height: 'calc(100vh - 160px)' }}>
-              <Chatbot />
+              <Chatbot userId={selectedUser.id} userName={selectedUser.name} />
             </div>
           </div>
         )}
