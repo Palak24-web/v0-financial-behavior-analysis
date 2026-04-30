@@ -32,9 +32,10 @@ import {
 export const getUserProfileTool = tool({
   description: 'Retrieve a real user profile from the database including name, email, monthly income, monthly budget, and computed savings rate.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1).describe('User ID to look up'),
+    user_id: z.number().int().positive().optional().describe('User ID to look up (default: 1)'),
   }),
-  execute: async ({ user_id }) => {
+  execute: async ({ user_id: uid }) => {
+    const user_id = uid ?? 1
     const user = await getUser(user_id)
     if (!user) return { error: `No user found with id ${user_id}` }
     const savingsRate =
@@ -54,11 +55,13 @@ export const getTransactionsTool = tool({
   description:
     "Fetch a user's real recent transactions from the database. Returns enriched rows with time-of-day tags so the AI can detect late-night or impulse patterns.",
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1).describe('User ID'),
-    limit: z.number().int().min(1).max(100).default(20).describe('Max number of transactions to return'),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
+    limit: z.number().int().min(1).max(100).optional().describe('Max number of transactions to return (default: 20)'),
     days: z.number().int().min(1).max(365).optional().describe('If set, only return transactions from the last N days'),
   }),
-  execute: async ({ user_id, limit, days }) => {
+  execute: async ({ user_id: uid, limit: lim, days }) => {
+    const user_id = uid ?? 1
+    const limit = lim ?? 20
     const rows = days
       ? await getTransactionsByPeriod(user_id, days)
       : await getTransactions(user_id, limit)
@@ -111,14 +114,16 @@ export const detectBehaviorTool = tool({
   description:
     'Analyze real spending data and detect behavioral patterns: late-night habits, category addiction, impulse buying, budget pace, and more. Optionally saves insights to DB.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
     save_insights: z
       .boolean()
-      .default(false)
+      .optional()
       .describe('If true, persist detected patterns as behavior_insight rows in the DB'),
-    days: z.number().int().min(7).max(90).default(30).describe('Look-back window in days'),
+    days: z.number().int().min(7).max(90).optional().describe('Look-back window in days (default: 30)'),
   }),
-  execute: async ({ user_id, save_insights, days }) => {
+  execute: async ({ user_id: uid, save_insights, days: d }) => {
+    const user_id = uid ?? 1
+    const days = d ?? 30
     const [transactions, stats, user, categories, weekly] = await Promise.all([
       getTransactionsByPeriod(user_id, days),
       getMonthlyStats(user_id),
@@ -264,9 +269,10 @@ export const getSpendingScoreTool = tool({
   description:
     "Calculate a user's real financial discipline score (0-100) based on live spending data: budget adherence, impulse control, category balance, spending trends, and more.",
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
   }),
-  execute: async ({ user_id }) => {
+  execute: async ({ user_id: uid }) => {
+    const user_id = uid ?? 1
     const [stats, user, categories, flagged, weekly] = await Promise.all([
       getMonthlyStats(user_id),
       getUser(user_id),
@@ -375,7 +381,7 @@ export const getSpendingScoreTool = tool({
   },
 })
 
-// ── 4. decisionCoach ──────────────────────────────────────────────────────────
+// ── 4. decisionCoach ────────────────────────────��─────────────────────────────
 // Original mock only checked Food category with a $300 threshold.
 // Real version fetches live budget, computes precise risk, and returns a
 // structured recommendation with alternatives.
@@ -384,12 +390,13 @@ export const decisionCoachTool = tool({
   description:
     'Evaluate whether a user should make a specific purchase. Fetches live budget and spending data to give a precise risk level and recommendation.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
     amount: z.number().positive().describe('Purchase amount in dollars'),
     merchant: z.string().min(1).describe('Where they want to spend'),
     category: z.string().describe('Spending category'),
   }),
-  execute: async ({ user_id, amount, merchant, category }) => {
+  execute: async ({ user_id: uid, amount, merchant, category }) => {
+    const user_id = uid ?? 1
     const [stats, user, categories, flagged] = await Promise.all([
       getMonthlyStats(user_id),
       getUser(user_id),
@@ -466,9 +473,10 @@ export const decisionCoachTool = tool({
 export const getMonthlySummaryTool = tool({
   description: 'Fetch a full monthly summary: budget, spending, projections, category breakdown, and weekly trend.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
   }),
-  execute: async ({ user_id }) => {
+  execute: async ({ user_id: uid }) => {
+    const user_id = uid ?? 1
     const [stats, user, categories, weekly] = await Promise.all([
       getMonthlyStats(user_id),
       getUser(user_id),
@@ -500,8 +508,9 @@ export const getMonthlySummaryTool = tool({
 
 export const getWeeklyTrendTool = tool({
   description: 'Fetch 8-week spending trend to identify if spending is rising, falling, or stable.',
-  inputSchema: z.object({ user_id: z.number().int().positive().default(1) }),
-  execute: async ({ user_id }) => {
+  inputSchema: z.object({ user_id: z.number().int().positive().optional().describe('User ID (default: 1)') }),
+  execute: async ({ user_id: uid }) => {
+    const user_id = uid ?? 1
     const rows = await getWeeklySpending(user_id)
     if (rows.length >= 2) {
       const latest = Number(rows[rows.length - 1].amount)
@@ -517,10 +526,12 @@ export const getWeeklyTrendTool = tool({
 export const getDailyPatternTool = tool({
   description: 'Fetch daily spending for the last N days to identify day-of-week habits.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
-    days: z.number().int().min(1).max(30).default(7),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
+    days: z.number().int().min(1).max(30).optional().describe('Days to look back (default: 7)'),
   }),
-  execute: async ({ user_id, days }) => {
+  execute: async ({ user_id: uid, days: d }) => {
+    const user_id = uid ?? 1
+    const days = d ?? 7
     const rows = await getDailySpending(user_id, days)
     const sorted = [...rows].sort((a, b) => Number(b.amount) - Number(a.amount))
     return {
@@ -534,8 +545,9 @@ export const getDailyPatternTool = tool({
 
 export const getBehaviorInsightsTool = tool({
   description: 'Fetch all existing behavioral insights for a user from the database.',
-  inputSchema: z.object({ user_id: z.number().int().positive().default(1) }),
-  execute: async ({ user_id }) => {
+  inputSchema: z.object({ user_id: z.number().int().positive().optional().describe('User ID (default: 1)') }),
+  execute: async ({ user_id: uid }) => {
+    const user_id = uid ?? 1
     const rows = await getBehaviorInsights(user_id)
     const byType = rows.reduce<Record<string, number>>((acc, r) => {
       acc[r.type] = (acc[r.type] ?? 0) + 1
@@ -548,13 +560,14 @@ export const getBehaviorInsightsTool = tool({
 export const logTransactionTool = tool({
   description: 'Record a transaction mentioned in conversation. Auto-flags as late-night between 10pm–4am.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
     amount: z.number().positive(),
     merchant: z.string().min(1),
     category: z.enum(['Food', 'Shopping', 'Bills', 'Travel', 'Subscriptions', 'Investment', 'Transport', 'Misc']),
     note: z.string().optional(),
   }),
-  execute: async ({ user_id, amount, merchant, category, note }) => {
+  execute: async ({ user_id: uid, amount, merchant, category, note }) => {
+    const user_id = uid ?? 1
     const now = new Date()
     const hour = now.getHours()
     const isLateNight = hour >= 22 || hour <= 4
@@ -572,14 +585,15 @@ export const logTransactionTool = tool({
 export const saveInsightTool = tool({
   description: 'Persist a newly detected behavioral insight to the database so it appears on the user dashboard.',
   inputSchema: z.object({
-    user_id: z.number().int().positive().default(1),
+    user_id: z.number().int().positive().optional().describe('User ID (default: 1)'),
     type: z.enum(['pattern', 'anomaly', 'trend', 'forecast', 'positive']),
     title: z.string().min(1),
     description: z.string().min(1),
     action: z.string().optional(),
     severity: z.enum(['info', 'warning', 'danger']),
   }),
-  execute: async ({ user_id, type, title, description, action, severity }) => {
+  execute: async ({ user_id: uid, type, title, description, action, severity }) => {
+    const user_id = uid ?? 1
     const insight = await createBehaviorInsight({ user_id, type, title, description, action: action ?? null, severity })
     return { saved: true, insight }
   },
