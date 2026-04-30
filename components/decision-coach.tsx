@@ -105,7 +105,22 @@ export function DecisionCoach() {
       const data = await res.json()
       // Always show result — the route now returns 200 with a valid object even on errors
       if (data.verdict) {
-        setResult(data)
+        // Coerce numeric fields to numbers — the API may return them as strings
+        setResult({
+          ...data,
+          amount: Number(data.amount ?? 0),
+          risk_score: Number(data.risk_score ?? 50),
+          context: {
+            ...data.context,
+            budget: Number(data.context?.budget ?? 0),
+            spent: Number(data.context?.spent ?? 0),
+            remaining: String(data.context?.remaining ?? '0'),
+            projected_month_end: String(data.context?.projected_month_end ?? '0'),
+            would_exceed_budget: Boolean(data.context?.would_exceed_budget),
+            flagged_count: Number(data.context?.flagged_count ?? 0),
+            category_spend: String(data.context?.category_spend ?? '0'),
+          },
+        })
       } else {
         throw new Error(data.error ?? 'Could not analyze purchase')
       }
@@ -245,7 +260,7 @@ export function DecisionCoach() {
                         <span className={`text-base font-bold ${verdictCfg!.text}`}>{verdictCfg!.label}</span>
                       </div>
                       <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${verdictCfg!.badge}`}>
-                        {result.item} · ${result.amount.toFixed(2)}
+                        {result.item} · ${Number(result.amount).toFixed(2)}
                       </span>
                     </div>
                     <p className="text-sm font-semibold text-foreground leading-snug">{result.headline}</p>
