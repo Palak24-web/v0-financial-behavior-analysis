@@ -90,17 +90,19 @@ AVOID
 - Robotic or repetitive tone`
 
 export async function POST(req: Request) {
-  const { messages }: { messages: UIMessage[] } = await req.json()
+  const body = await req.json()
+  const messages: UIMessage[] = body.messages ?? []
+  const userId: number = parseInt(String(body.user_id ?? 1), 10) || 1
 
   // Inject live user snapshot as context so the AI has baseline data even before
   // calling tools (reduces unnecessary first-turn tool calls)
   let liveContext = ''
   try {
     const [user, stats, categories, flagged] = await Promise.all([
-      getUser(1),
-      getMonthlyStats(1),
-      getCategoryBreakdown(1, 30),
-      getFlaggedTransactions(1, 10),
+      getUser(userId),
+      getMonthlyStats(userId),
+      getCategoryBreakdown(userId, 30),
+      getFlaggedTransactions(userId, 10),
     ])
     const day = new Date().getDate()
     const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
@@ -110,6 +112,7 @@ export async function POST(req: Request) {
     liveContext = `
 
 --- LIVE USER SNAPSHOT (always use this as baseline) ---
+Current user_id: ${userId} (ALWAYS pass this as user_id when calling tools)
 User: ${user?.name ?? 'User'} | Budget: $${user?.monthly_budget}/mo | Income: $${user?.monthly_income}/mo
 Month progress: Day ${day}/${daysInMonth} | Spent: $${stats.total_spent} | Projected: $${projected}
 Budget remaining: $${(Number(user?.monthly_budget ?? 0) - Number(stats.total_spent)).toFixed(0)}

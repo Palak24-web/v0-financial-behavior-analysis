@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateText, Output } from 'ai'
+import { generateText } from 'ai'
 import { createGroq } from '@ai-sdk/groq'
-import { z } from 'zod'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 
 const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
@@ -79,29 +78,55 @@ Potential Purchase:
 
     const result = await generateText({
       model: groq('llama-3.3-70b-versatile'),
-      output: Output.object({
-        schema: z.object({
-          verdict: z.enum(['buy', 'skip', 'delay']),
-          risk_level: z.enum(['low', 'medium', 'high']),
-          risk_score: z.number().min(0).max(100),
-          headline: z.string().describe('One punchy sentence verdict'),
-          reasoning: z.string().describe('2-3 sentences explaining the decision using real data'),
-          budget_impact: z.string().describe('Specific dollar impact on the budget'),
-          alternative: z.string().nullable().describe('A smarter alternative if verdict is skip or delay'),
-          coaching_tip: z.string().describe('One behavioral nudge based on their spending habits'),
-        }),
-      }),
       system: `You are "MoneyMind AI" — a sharp financial decision coach.
 When evaluating a purchase:
 1. Look at the real budget data — remaining budget, projected overspend, category history
 2. Detect behavioral patterns — impulse risk, category addiction, late-night habits
 3. Give a clear verdict: "buy", "skip", or "delay"
 4. Be direct, data-driven, and slightly strict. No fluff, no generic advice.
-5. Always reference specific numbers from the context.`,
-      prompt: `Should the user buy this item? Use the real financial data below to decide.\n\n${context}`,
+5. Always reference specific dollar numbers from the context.
+6. Respond ONLY with valid JSON, no markdown, no explanation outside the JSON.`,
+      prompt: `Should the user buy this item? Analyze the real financial data below and respond with a JSON object only.
+
+${context}
+
+Respond with this exact JSON shape (no markdown code blocks, just raw JSON):
+{
+  "verdict": "buy" | "skip" | "delay",
+  "risk_level": "low" | "medium" | "high",
+  "risk_score": <number 0-100>,
+  "headline": "<one punchy sentence verdict>",
+  "reasoning": "<2-3 sentences using real dollar numbers>",
+  "budget_impact": "<specific dollar impact>",
+  "alternative": "<smarter alternative if skip/delay, or null>",
+  "coaching_tip": "<one behavioral nudge based on their habits>"
+}`,
     })
 
-    const output = result.output
+    // Parse the AI response — strip any accidental markdown fencing
+    let output: {
+      verdict: string; risk_level: string; risk_score: number; headline: string
+      reasoning: string; budget_impact: string; alternative: string | null; coaching_tip: string
+    }
+    try {
+      const raw = result.text.replace(/```json\n?|```\n?/g, '').trim()
+      output = JSON.parse(raw)
+    } catch {
+      // Fallback: derive verdict from the raw numbers if JSON parse fails
+      const risk = wouldExceedBudget ? 'high' : parsedAmount > remaining * 0.5 ? 'medium' : 'low'
+      output = {
+        verdict: wouldExceedBudget ? 'skip' : risk === 'medium' ? 'delay' : 'buy',
+        risk_level: risk,
+        risk_score: wouldExceedBudget ? 80 : risk === 'medium' ? 55 : 25,
+        headline: wouldExceedBudget
+          ? `Buying this would push you $${(spent + parsedAmount - budget).toFixed(0)} over budget.`
+          : `You have $${remaining.toFixed(0)} remaining — this is ${purchasePct}% of your budget.`,
+        reasoning: `Your budget is $${budget} and you've spent $${spent.toFixed(2)} so far this month.`,
+        budget_impact: `$${remaining.toFixed(2)} remaining after this purchase.`,
+        alternative: null,
+        coaching_tip: `You have ${flaggedCount} flagged transactions this month. Stay mindful.`,
+      }
+    }
 
     return NextResponse.json({
       item,
