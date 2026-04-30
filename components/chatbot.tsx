@@ -50,9 +50,7 @@ function MessageBubble({
     .map((p) => p.text)
     .join('')
 
-  // Still streaming or tool-only step — don't render empty bubble
   if (!text.trim()) return null
-
 
   const isUser = role === 'user'
 
@@ -191,7 +189,7 @@ export function Chatbot({ userId = 1, userName = 'User' }: { userId?: number; us
           </div>
         </div>
         <button
-          onClick={() => setMessages([])}
+          onClick={() => window.location.reload()}
           className="p-2 rounded-xl hover:bg-secondary transition-colors"
           title="Clear chat"
         >
