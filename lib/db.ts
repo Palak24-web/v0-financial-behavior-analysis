@@ -1,10 +1,14 @@
 import { neon } from '@neondatabase/serverless'
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not set')
+// Lazy getter — creates a new client per call (neon() is cheap, stateless HTTP).
+// This avoids the build-time "DATABASE_URL is not set" error that occurs when
+// Next.js collects static page data before env vars are available.
+function db() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set')
+  }
+  return neon(process.env.DATABASE_URL)
 }
-
-export const sql = neon(process.env.DATABASE_URL!)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,16 +77,19 @@ export type CategoryBreakdown = {
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 export async function getAllUsers(): Promise<User[]> {
+  const sql = db()
   const rows = await sql`SELECT * FROM users ORDER BY id ASC`
   return rows as User[]
 }
 
 export async function getUser(userId: number): Promise<User | null> {
+  const sql = db()
   const rows = await sql`SELECT * FROM users WHERE id = ${userId} LIMIT 1`
   return (rows[0] as User) ?? null
 }
 
 export async function getUserByEmail(email: string): Promise<User | null> {
+  const sql = db()
   const rows = await sql`SELECT * FROM users WHERE email = ${email} LIMIT 1`
   return (rows[0] as User) ?? null
 }
@@ -93,6 +100,7 @@ export async function createUser(data: {
   monthly_income: number
   monthly_budget: number
 }): Promise<User> {
+  const sql = db()
   const rows = await sql`
     INSERT INTO users (name, email, monthly_income, monthly_budget)
     VALUES (${data.name}, ${data.email}, ${data.monthly_income}, ${data.monthly_budget})
@@ -108,18 +116,15 @@ export async function updateUser(
   const fields = Object.entries(data).filter(([, v]) => v !== undefined)
   if (fields.length === 0) return getUser(userId)
 
-  // Build dynamic SET clause safely
+  const sql = db()
   const setClauses = fields.map(([key], i) => `${key} = $${i + 2}`).join(', ')
   const values = [userId, ...fields.map(([, v]) => v)]
-
-  const rows = await sql(
-    `UPDATE users SET ${setClauses} WHERE id = $1 RETURNING *`,
-    values
-  )
+  const rows = await sql(`UPDATE users SET ${setClauses} WHERE id = $1 RETURNING *`, values)
   return (rows[0] as User) ?? null
 }
 
 export async function deleteUser(userId: number): Promise<boolean> {
+  const sql = db()
   const rows = await sql`DELETE FROM users WHERE id = ${userId} RETURNING id`
   return rows.length > 0
 }
@@ -127,6 +132,7 @@ export async function deleteUser(userId: number): Promise<boolean> {
 // ─── Transactions ─────────────────────────────────────────────────────────────
 
 export async function getTransactions(userId: number, limit = 50): Promise<Transaction[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM transactions
     WHERE user_id = ${userId}
@@ -137,11 +143,13 @@ export async function getTransactions(userId: number, limit = 50): Promise<Trans
 }
 
 export async function getTransaction(transactionId: number): Promise<Transaction | null> {
+  const sql = db()
   const rows = await sql`SELECT * FROM transactions WHERE id = ${transactionId} LIMIT 1`
   return (rows[0] as Transaction) ?? null
 }
 
 export async function getTransactionsByPeriod(userId: number, days = 30): Promise<Transaction[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM transactions
     WHERE user_id = ${userId}
@@ -156,6 +164,7 @@ export async function getTransactionsByCategory(
   category: string,
   limit = 50
 ): Promise<Transaction[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM transactions
     WHERE user_id = ${userId} AND category = ${category}
@@ -166,6 +175,7 @@ export async function getTransactionsByCategory(
 }
 
 export async function getFlaggedTransactions(userId: number, limit = 50): Promise<Transaction[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM transactions
     WHERE user_id = ${userId} AND is_flagged = TRUE
@@ -176,6 +186,7 @@ export async function getFlaggedTransactions(userId: number, limit = 50): Promis
 }
 
 export async function getCategoryBreakdown(userId: number, days = 30): Promise<CategoryBreakdown[]> {
+  const sql = db()
   const rows = await sql`
     SELECT
       category,
@@ -193,6 +204,7 @@ export async function getCategoryBreakdown(userId: number, days = 30): Promise<C
 export async function getWeeklySpending(
   userId: number
 ): Promise<{ week: string; amount: number; week_start: string }[]> {
+  const sql = db()
   const rows = await sql`
     SELECT
       TO_CHAR(DATE_TRUNC('week', date), 'Mon DD') AS week,
@@ -211,6 +223,7 @@ export async function getDailySpending(
   userId: number,
   days = 7
 ): Promise<{ day: string; date: string; amount: number }[]> {
+  const sql = db()
   const rows = await sql`
     SELECT
       TO_CHAR(date::DATE, 'Dy') AS day,
@@ -235,6 +248,7 @@ export async function createTransaction(data: {
   is_flagged?: boolean
   flag_reason?: string | null
 }): Promise<Transaction> {
+  const sql = db()
   const rows = await sql`
     INSERT INTO transactions (user_id, amount, merchant, category, date, note, is_flagged, flag_reason)
     VALUES (
@@ -242,7 +256,7 @@ export async function createTransaction(data: {
       ${data.amount},
       ${data.merchant},
       ${data.category},
-      ${data.date ?? 'NOW()'},
+      ${data.date ?? new Date().toISOString()},
       ${data.note ?? null},
       ${data.is_flagged ?? false},
       ${data.flag_reason ?? null}
@@ -267,22 +281,21 @@ export async function updateTransaction(
   const fields = Object.entries(data).filter(([, v]) => v !== undefined)
   if (fields.length === 0) return getTransaction(transactionId)
 
+  const sql = db()
   const setClauses = fields.map(([key], i) => `${key} = $${i + 2}`).join(', ')
   const values = [transactionId, ...fields.map(([, v]) => v)]
-
-  const rows = await sql(
-    `UPDATE transactions SET ${setClauses} WHERE id = $1 RETURNING *`,
-    values
-  )
+  const rows = await sql(`UPDATE transactions SET ${setClauses} WHERE id = $1 RETURNING *`, values)
   return (rows[0] as Transaction) ?? null
 }
 
 export async function deleteTransaction(transactionId: number): Promise<boolean> {
+  const sql = db()
   const rows = await sql`DELETE FROM transactions WHERE id = ${transactionId} RETURNING id`
   return rows.length > 0
 }
 
 export async function getMonthlyStats(userId: number): Promise<MonthlyStats> {
+  const sql = db()
   const rows = await sql`
     SELECT
       COALESCE(SUM(amount), 0)::NUMERIC(10,2) AS total_spent,
@@ -299,6 +312,7 @@ export async function getMonthlyStats(userId: number): Promise<MonthlyStats> {
 // ─── Behavior Insights ────────────────────────────────────────────────────────
 
 export async function getBehaviorInsights(userId: number): Promise<BehaviorInsight[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM behavior_insights
     WHERE user_id = ${userId}
@@ -308,6 +322,7 @@ export async function getBehaviorInsights(userId: number): Promise<BehaviorInsig
 }
 
 export async function getBehaviorInsight(insightId: number): Promise<BehaviorInsight | null> {
+  const sql = db()
   const rows = await sql`SELECT * FROM behavior_insights WHERE id = ${insightId} LIMIT 1`
   return (rows[0] as BehaviorInsight) ?? null
 }
@@ -320,6 +335,7 @@ export async function createBehaviorInsight(data: {
   action?: string | null
   severity: string
 }): Promise<BehaviorInsight> {
+  const sql = db()
   const rows = await sql`
     INSERT INTO behavior_insights (user_id, type, title, description, action, severity)
     VALUES (${data.user_id}, ${data.type}, ${data.title}, ${data.description}, ${data.action ?? null}, ${data.severity})
@@ -335,9 +351,9 @@ export async function updateBehaviorInsight(
   const fields = Object.entries(data).filter(([, v]) => v !== undefined)
   if (fields.length === 0) return getBehaviorInsight(insightId)
 
+  const sql = db()
   const setClauses = fields.map(([key], i) => `${key} = $${i + 2}`).join(', ')
   const values = [insightId, ...fields.map(([, v]) => v)]
-
   const rows = await sql(
     `UPDATE behavior_insights SET ${setClauses} WHERE id = $1 RETURNING *`,
     values
@@ -346,6 +362,7 @@ export async function updateBehaviorInsight(
 }
 
 export async function deleteBehaviorInsight(insightId: number): Promise<boolean> {
+  const sql = db()
   const rows = await sql`DELETE FROM behavior_insights WHERE id = ${insightId} RETURNING id`
   return rows.length > 0
 }
@@ -353,6 +370,7 @@ export async function deleteBehaviorInsight(insightId: number): Promise<boolean>
 // ─── Chat Sessions ────────────────────────────────────────────────────────────
 
 export async function getChatSessions(userId: number): Promise<ChatSession[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM chat_sessions
     WHERE user_id = ${userId}
@@ -362,11 +380,13 @@ export async function getChatSessions(userId: number): Promise<ChatSession[]> {
 }
 
 export async function getChatSession(sessionId: number): Promise<ChatSession | null> {
+  const sql = db()
   const rows = await sql`SELECT * FROM chat_sessions WHERE id = ${sessionId} LIMIT 1`
   return (rows[0] as ChatSession) ?? null
 }
 
 export async function createChatSession(userId: number, title?: string): Promise<ChatSession> {
+  const sql = db()
   const rows = await sql`
     INSERT INTO chat_sessions (user_id, title)
     VALUES (${userId}, ${title ?? null})
@@ -376,6 +396,7 @@ export async function createChatSession(userId: number, title?: string): Promise
 }
 
 export async function updateChatSessionTitle(sessionId: number, title: string): Promise<ChatSession | null> {
+  const sql = db()
   const rows = await sql`
     UPDATE chat_sessions SET title = ${title}, updated_at = NOW()
     WHERE id = ${sessionId}
@@ -385,6 +406,7 @@ export async function updateChatSessionTitle(sessionId: number, title: string): 
 }
 
 export async function deleteChatSession(sessionId: number): Promise<boolean> {
+  const sql = db()
   await sql`DELETE FROM chat_messages WHERE session_id = ${sessionId}`
   const rows = await sql`DELETE FROM chat_sessions WHERE id = ${sessionId} RETURNING id`
   return rows.length > 0
@@ -393,6 +415,7 @@ export async function deleteChatSession(sessionId: number): Promise<boolean> {
 // ─── Chat Messages ────────────────────────────────────────────────────────────
 
 export async function getChatMessages(sessionId: number): Promise<ChatMessage[]> {
+  const sql = db()
   const rows = await sql`
     SELECT * FROM chat_messages
     WHERE session_id = ${sessionId}
@@ -406,6 +429,7 @@ export async function saveChatMessage(
   role: 'user' | 'assistant',
   content: string
 ): Promise<ChatMessage> {
+  const sql = db()
   const rows = await sql`
     INSERT INTO chat_messages (session_id, role, content)
     VALUES (${sessionId}, ${role}, ${content})
@@ -416,6 +440,7 @@ export async function saveChatMessage(
 }
 
 export async function deleteMessage(messageId: number): Promise<boolean> {
+  const sql = db()
   const rows = await sql`DELETE FROM chat_messages WHERE id = ${messageId} RETURNING id`
   return rows.length > 0
 }
@@ -423,6 +448,7 @@ export async function deleteMessage(messageId: number): Promise<boolean> {
 // ─── Admin Analytics ──────────────────────────────────────────────────────────
 
 export async function getAdminOverview() {
+  const sql = db()
   const [userStats, txStats, insightStats] = await Promise.all([
     sql`
       SELECT
@@ -450,14 +476,11 @@ export async function getAdminOverview() {
       FROM behavior_insights
     `,
   ])
-  return {
-    users: userStats[0],
-    transactions: txStats[0],
-    insights: insightStats[0],
-  }
+  return { users: userStats[0], transactions: txStats[0], insights: insightStats[0] }
 }
 
 export async function getAdminCategoryStats() {
+  const sql = db()
   const rows = await sql`
     SELECT
       category,
@@ -473,6 +496,7 @@ export async function getAdminCategoryStats() {
 }
 
 export async function getAdminUserLeaderboard() {
+  const sql = db()
   const rows = await sql`
     SELECT
       u.id,
@@ -494,6 +518,7 @@ export async function getAdminUserLeaderboard() {
 }
 
 export async function getAdminFlaggedReport() {
+  const sql = db()
   const rows = await sql`
     SELECT
       t.*,
@@ -509,6 +534,7 @@ export async function getAdminFlaggedReport() {
 }
 
 export async function getAdminSpendingTrend(days = 30) {
+  const sql = db()
   const rows = await sql`
     SELECT
       date::DATE::TEXT AS day,
