@@ -131,8 +131,16 @@ export function DecisionCoach() {
     }
   }
 
-  const verdictCfg = result ? VERDICT_CONFIG[result.verdict] : null
-  const riskCfg = result ? RISK_CONFIG[result.risk_level] : null
+  // Normalize verdict/risk to known keys — API may return unexpected values
+  const safeVerdict = (result?.verdict as Verdict) in VERDICT_CONFIG
+    ? (result!.verdict as Verdict)
+    : 'delay'
+  const safeRisk = (result?.risk_level as RiskLevel) in RISK_CONFIG
+    ? (result!.risk_level as RiskLevel)
+    : 'medium'
+
+  const verdictCfg = result ? VERDICT_CONFIG[safeVerdict] : null
+  const riskCfg = result ? RISK_CONFIG[safeRisk] : null
 
   return (
     <>
