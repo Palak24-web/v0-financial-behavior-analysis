@@ -1,5 +1,6 @@
 import { convertToModelMessages, streamText, UIMessage, stepCountIs } from 'ai'
 import { createGroq } from '@ai-sdk/groq'
+import { readFileSync } from 'fs'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 import {
   getTransactionsTool,
@@ -10,8 +11,19 @@ import {
   decisionCoachTool,
 } from '@/lib/tools'
 
+// Load GROQ_API_KEY from the shared env file if not already in process.env
+function getGroqKey(): string {
+  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY
+  try {
+    const raw = readFileSync('/vercel/share/.env.project', 'utf-8')
+    const match = raw.match(/^GROQ_API_KEY=['"]?([^'"\n]+)['"]?/m)
+    if (match?.[1]) return match[1].trim()
+  } catch {}
+  throw new Error('GROQ_API_KEY not found')
+}
+
 // Only expose the tools the chatbot actually needs — Groq has limits on tool count
-const tools = {
+const chatTools = {
   getTransactions: getTransactionsTool,
   getMonthlySummary: getMonthlySummaryTool,
   getWeeklyTrend: getWeeklyTrendTool,
@@ -19,8 +31,6 @@ const tools = {
   getSpendingScore: getSpendingScoreTool,
   decisionCoach: decisionCoachTool,
 }
-
-const groq = createGroq()
 
 export const maxDuration = 60
 
@@ -82,14 +92,25 @@ Recent flagged: ${flagged
     // Proceed without snapshot if DB is unreachable
   }
 
-  const result = streamText({
-    model: groq('llama-3.3-70b-versatile'),
-    system: MONEYMIND_SYSTEM + liveContext,
-    messages: await convertToModelMessages(messages),
-    tools,
-    stopWhen: stepCountIs(10),
-    abortSignal: req.signal,
-  })
-
-  return result.toUIMessageStreamResponse()
+  try {
+    const groq = createGroq({ apiKey: getGroqKey() })
+    const result = streamText({
+      model: groq('llama-3.3-70b-versatile'),
+      system: MONEYMIND_SYSTEM + liveContext,
+      messages: await convertToModelMessages(messages),
+      tools: chatTools,
+      stopWhen: stepCountIs(10),
+      abortSignal: req.signal,
+    })
+    return result.toUIMessageStreamResponse()
+  } catch (err) {
+    console.error('[v0] /api/chat streamText error:', err)
+    // Return a valid stream with a fallback message so the UI never hangs
+    const fallback = streamText({
+      model: createGroq({ apiKey: getGroqKey() })('llama-3.3-70b-versatile'),
+      system: 'You are a helpful financial assistant.',
+      messages: [{ role: 'user', content: 'Say: "I could not load your financial data right now. Please try again in a moment."' }],
+    })
+    return fallback.toUIMessageStreamResponse()
+  }
 }

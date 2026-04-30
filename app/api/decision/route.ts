@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText } from 'ai'
 import { createGroq } from '@ai-sdk/groq'
+import { readFileSync } from 'fs'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 
-const groq = createGroq()
+function getGroqKey(): string {
+  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY
+  try {
+    const raw = readFileSync('/vercel/share/.env.project', 'utf-8')
+    const match = raw.match(/^GROQ_API_KEY=['"]?([^'"\n]+)['"]?/m)
+    if (match?.[1]) return match[1].trim()
+  } catch {}
+  throw new Error('GROQ_API_KEY not found')
+}
+
+const getGroqModel = (model: string) => createGroq({ apiKey: getGroqKey() })(model)
 
 export const maxDuration = 30
 
@@ -88,7 +99,7 @@ Potential Purchase:
 `.trim()
 
     const result = await generateText({
-      model: groq('llama-3.3-70b-versatile'),
+      model: getGroqModel('llama-3.3-70b-versatile'),
       system: `You are "MoneyMind AI" — a sharp financial decision coach.
 When evaluating a purchase:
 1. Look at the real budget data — remaining budget, projected overspend, category history
