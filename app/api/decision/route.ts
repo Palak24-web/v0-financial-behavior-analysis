@@ -3,7 +3,7 @@ import { generateText } from 'ai'
 import { createGroq } from '@ai-sdk/groq'
 import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
 
-const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
+const groq = createGroq()
 
 export const maxDuration = 30
 

@@ -20,7 +20,7 @@ const tools = {
   decisionCoach: decisionCoachTool,
 }
 
-const groq = createGroq({ apiKey: process.env.GROQ_API_KEY })
+const groq = createGroq()
 
 export const maxDuration = 60
 
