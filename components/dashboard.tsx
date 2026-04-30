@@ -4,6 +4,7 @@ import { useState } from 'react'
 import useSWR from 'swr'
 import { TrendingUp, TrendingDown, AlertTriangle, Target, Zap, CreditCard, BarChart3, Coffee, ShoppingBag, Plane, DollarSign } from 'lucide-react'
 import { WeeklyAreaChart, MonthlyBarChart, CategoryPieChart, StackedWeeklyChart } from './spending-chart'
+import { SmartInsightTrigger } from './smart-insight-trigger'
 
 const fetcher = (url: string) => fetch(url).then(r => r.json())
 
@@ -54,7 +55,7 @@ type DashboardTab = 'overview' | 'weekly' | 'monthly' | 'categories'
 export function Dashboard() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
 
-  const { data: insightsData, isLoading: loadingInsights } = useSWR('/api/insights?user_id=1', fetcher)
+  const { data: insightsData, isLoading: loadingInsights } = useSWR('/api/insights?user_id=1&include=stats', fetcher)
   const { data: txData, isLoading: loadingTx } = useSWR('/api/transactions?user_id=1&type=recent&limit=8', fetcher)
   const { data: weeklyData } = useSWR('/api/transactions?user_id=1&type=weekly', fetcher)
   const { data: categoriesData } = useSWR('/api/transactions?user_id=1&type=categories&days=30', fetcher)
@@ -232,51 +233,16 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* AI Insights */}
+        {/* Smart Insight Trigger */}
         <div className="bg-surface border border-border rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-foreground">AI Behavior Insights</h3>
+            <h3 className="font-semibold text-foreground">Smart Insights</h3>
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-              <span className="text-xs text-primary">Live Analysis</span>
+              <span className="text-xs text-primary">Auto-detected</span>
             </div>
           </div>
-          <div className="space-y-3">
-            {loadingInsights
-              ? Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="p-3 rounded-xl border border-border bg-secondary/20 animate-pulse space-y-2">
-                    <div className="h-3 w-32 bg-secondary rounded" />
-                    <div className="h-2.5 w-full bg-secondary rounded" />
-                    <div className="h-2.5 w-3/4 bg-secondary rounded" />
-                  </div>
-                ))
-              : insights.length > 0
-              ? insights.slice(0, 4).map((ins: { id: number; title: string; description: string; action: string | null; severity: string }) => {
-                  const colorMap: Record<string, string> = {
-                    danger: 'border-red-500/20 bg-red-500/5',
-                    warning: 'border-yellow-500/20 bg-yellow-500/5',
-                    info: 'border-blue-500/20 bg-blue-500/5',
-                  }
-                  const textMap: Record<string, string> = {
-                    danger: 'text-red-400',
-                    warning: 'text-yellow-400',
-                    info: 'text-blue-400',
-                  }
-                  const cls = colorMap[ins.severity] ?? colorMap.info
-                  const txt = textMap[ins.severity] ?? textMap.info
-                  return (
-                    <div key={ins.id} className={`p-3 rounded-xl border ${cls}`}>
-                      <p className={`text-xs font-semibold mb-1 ${txt}`}>{ins.title}</p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{ins.description}</p>
-                      {ins.action && (
-                        <p className={`text-xs font-medium mt-2 ${txt}`}>→ {ins.action}</p>
-                      )}
-                    </div>
-                  )
-                })
-              : <p className="text-sm text-muted-foreground text-center py-4">No insights yet</p>
-            }
-          </div>
+          <SmartInsightTrigger userId={1} />
         </div>
       </div>
 
