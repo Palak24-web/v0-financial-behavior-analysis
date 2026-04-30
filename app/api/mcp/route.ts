@@ -5,10 +5,10 @@
  * @modelcontextprotocol/sdk. Every tool here calls the live Neon database
  * via lib/db.ts — zero mock data.
  *
- * Registered MCP tools (14 total):
+ * Registered MCP tools (18 total):
  * ─────────────────────────────────
  * User
- *   get_user_profile         — user record + computed health score
+ *   get_user_profile         — user record + computed savings rate
  *   get_monthly_stats        — budget, spend, flagged summary for current month
  *
  * Transactions
@@ -17,6 +17,8 @@
  *   get_category_breakdown   — per-category spend totals for any window
  *   get_weekly_spending      — 8-week trend with week-over-week % change
  *   get_daily_spending       — day-by-day habit data
+ *   get_monthly_summary      — full monthly summary in one call
+ *   get_daily_pattern        — highest/lowest/avg day breakdown
  *   create_transaction       — insert a transaction, auto-flag late-night
  *
  * Intelligence
@@ -24,6 +26,7 @@
  *   get_spending_score       — compute 0-100 financial discipline score
  *   decision_coach           — risk level + recommendation for a purchase
  *   save_insight             — persist a detected insight to DB
+ *   get_behavior_insights    — fetch all saved insights for a user
  *
  * Admin
  *   get_admin_overview       — platform-wide aggregate stats
@@ -247,6 +250,55 @@ function buildServer(): McpServer {
         flag_reason: autoReason,
       })
       return ok({ saved: true, flagged: autoFlag, flag_reason: autoReason, transaction: tx })
+    }
+  )
+
+  server.tool(
+    'get_monthly_summary',
+    'Fetch a full monthly summary for a user: budget, total spent, projections, category breakdown, and 8-week trend — all in one call.',
+    { user_id: z.number().int().positive() },
+    async ({ user_id }) => {
+      const [stats, user, categories, weekly] = await Promise.all([
+        getMonthlyStats(user_id),
+        getUser(user_id),
+        getCategoryBreakdown(user_id, 30),
+        getWeeklySpending(user_id),
+      ])
+      const budget = Number(user?.monthly_budget ?? 0)
+      const spent = Number(stats.total_spent)
+      const day = new Date().getDate()
+      const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+      const projected = day > 0 ? (spent / day) * daysInMonth : 0
+      return ok({
+        user: user?.name,
+        monthly_budget: budget,
+        monthly_income: user?.monthly_income,
+        total_spent: spent,
+        budget_remaining: (budget - spent).toFixed(2),
+        projected_month_end: projected.toFixed(2),
+        on_track: projected <= budget,
+        transaction_count: stats.transaction_count,
+        flagged_count: stats.flagged_count,
+        categories,
+        weekly_trend: weekly,
+        day_of_month: day,
+        days_in_month: daysInMonth,
+      })
+    }
+  )
+
+  server.tool(
+    'get_daily_pattern',
+    'Fetch day-by-day spending for the last N days and identify the highest and lowest spending days.',
+    {
+      user_id: z.number().int().positive(),
+      days: z.number().int().min(1).max(30).default(7),
+    },
+    async ({ user_id, days }) => {
+      const rows = await getDailySpending(user_id, days)
+      const sorted = [...rows].sort((a, b) => Number(b.amount) - Number(a.amount))
+      const avg = rows.length > 0 ? (rows.reduce((s, r) => s + Number(r.amount), 0) / rows.length).toFixed(2) : '0'
+      return ok({ daily: rows, highest_day: sorted[0] ?? null, lowest_day: sorted[sorted.length - 1] ?? null, avg_daily: avg })
     }
   )
 

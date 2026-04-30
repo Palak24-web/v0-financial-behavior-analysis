@@ -10,6 +10,10 @@ import {
   getWeeklySpending,
   getDailySpending,
   getBehaviorInsights,
+  getAdminOverview,
+  getAdminUserLeaderboard,
+  getAdminFlaggedReport,
+  getAdminSpendingTrend,
   createTransaction,
   createBehaviorInsight,
 } from '@/lib/db'
@@ -21,6 +25,25 @@ import {
 // Every tool queries live Neon DB — no hardcoded or mock data.
 // Compatible with AI SDK 6 (uses `inputSchema`, not `parameters`).
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── 0. getUserProfile ─────────────────────────────────────────────────────────
+// Fetch user record with computed savings rate and financial health metadata.
+
+export const getUserProfileTool = tool({
+  description: 'Retrieve a real user profile from the database including name, email, monthly income, monthly budget, and computed savings rate.',
+  inputSchema: z.object({
+    user_id: z.number().int().positive().default(1).describe('User ID to look up'),
+  }),
+  execute: async ({ user_id }) => {
+    const user = await getUser(user_id)
+    if (!user) return { error: `No user found with id ${user_id}` }
+    const savingsRate =
+      user.monthly_income > 0
+        ? (((user.monthly_income - user.monthly_budget) / user.monthly_income) * 100).toFixed(1)
+        : null
+    return { ...user, savings_rate_pct: savingsRate }
+  },
+})
 
 // ── 1. getTransactions ────────────────────────────────────────────────────────
 // Original mock just returned 3 hardcoded rows.
@@ -562,16 +585,65 @@ export const saveInsightTool = tool({
   },
 })
 
-// ─── Consolidated export (matches the shape the route uses) ──────────────────
+// ── Admin tools ───────────────────────────────────────────────────────────────
+
+export const getAdminOverviewTool = tool({
+  description: 'Get platform-wide aggregate statistics: total users, transaction volume, flagged counts, and insight severity breakdown.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    return await getAdminOverview()
+  },
+})
+
+export const getAdminLeaderboardTool = tool({
+  description: 'Get per-user spending leaderboard with transaction counts, flagged items, and insight counts for all users.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await getAdminUserLeaderboard()
+    return { users: rows, count: rows.length }
+  },
+})
+
+export const getAdminFlaggedReportTool = tool({
+  description: 'Get the 100 most recent flagged transactions across all users, including user name and email.',
+  inputSchema: z.object({}),
+  execute: async () => {
+    const rows = await getAdminFlaggedReport()
+    return { total: rows.length, transactions: rows }
+  },
+})
+
+export const getAdminSpendingTrendTool = tool({
+  description: 'Get platform-wide daily spending trend (total volume + flagged count per day) for the last N days.',
+  inputSchema: z.object({
+    days: z.number().int().min(1).max(90).default(30).describe('Days to look back'),
+  }),
+  execute: async ({ days }) => {
+    const rows = await getAdminSpendingTrend(days)
+    return { period_days: days, trend: rows }
+  },
+})
+
+// ─── Consolidated export — all tools in one object ───────────────────────────
+// Import this in /api/chat/route.ts as: import { tools } from '@/lib/tools'
 export const tools = {
+  // User
+  getUserProfile: getUserProfileTool,
+  // Transactions
   getTransactions: getTransactionsTool,
-  detectBehavior: detectBehaviorTool,
-  getSpendingScore: getSpendingScoreTool,
-  decisionCoach: decisionCoachTool,
   getMonthlySummary: getMonthlySummaryTool,
   getWeeklyTrend: getWeeklyTrendTool,
   getDailyPattern: getDailyPatternTool,
-  getBehaviorInsights: getBehaviorInsightsTool,
   logTransaction: logTransactionTool,
+  // Intelligence
+  detectBehavior: detectBehaviorTool,
+  getSpendingScore: getSpendingScoreTool,
+  decisionCoach: decisionCoachTool,
+  getBehaviorInsights: getBehaviorInsightsTool,
   saveInsight: saveInsightTool,
+  // Admin
+  getAdminOverview: getAdminOverviewTool,
+  getAdminLeaderboard: getAdminLeaderboardTool,
+  getAdminFlaggedReport: getAdminFlaggedReportTool,
+  getAdminSpendingTrend: getAdminSpendingTrendTool,
 }
