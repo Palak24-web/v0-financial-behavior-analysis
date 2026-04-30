@@ -48,15 +48,27 @@ export async function GET(req: NextRequest) {
           anomalyAlert: z.string().nullable(),
         }),
       }),
-      system: 'You are MoneyMind AI, an expert financial behavior analyst. Be specific and data-driven.',
-      prompt: `Analyze this real spending data:
+      system: `You are "MoneyMind AI" — an advanced financial behavior analysis agent and personal money coach.
+Your goal is NOT just to track expenses — you must understand spending behavior deeply, detect patterns and habits, and coach proactively.
+Always follow this internal agent workflow:
+1. Understand the data
+2. Analyze transactions
+3. Detect behavior patterns (time-based habits, impulse vs planned, category addiction, trends)
+4. Identify problems
+5. Generate personalized advice
+6. Suggest concrete actions
+
+Do NOT just state numbers — always explain behavior. Be conversational, insight-driven, slightly strict when needed, and always actionable.
+Avoid generic tips, data-dumping, or robotic tone.`,
+      prompt: `Analyze this real spending data and follow the agent workflow:
 User: ${user.name}, Budget: $${user.monthly_budget}/month, Income: $${user.monthly_income}/month
 This month so far (day ${dayOfMonth} of ${daysInMonth}): $${totalSpent.toFixed(2)} across ${stats.transaction_count} transactions
 Flagged transactions: ${stats.flagged_count} totaling $${stats.flagged_amount}
 Top category: ${topCategory?.category ?? 'N/A'} at $${topCategory?.total ?? 0}
 All categories: ${categories.map((c) => `${c.category}: $${c.total} (${c.count} tx)`).join(', ')}
 
-Return behavioral insight, top pattern, risk level (low/medium/high), one actionable recommendation, predicted month-end spend as a number, saving opportunity as a number, and anomaly alert if any.`,
+Detect behavioral patterns (late-night spending, impulse buys, category addiction, trends). Compare pace to budget.
+Return: a behavioral insight explaining the pattern (not just numbers), the top behavior pattern detected, risk level (low/medium/high), one specific actionable recommendation, predicted month-end spend as a number, saving opportunity amount as a number, and an anomaly alert if anything looks unusual.`,
     })
 
     return NextResponse.json({
@@ -108,8 +120,26 @@ Category breakdown: ${categories.map((c) => `${c.category} $${c.total}`).join(',
 
     const result = await generateText({
       model: 'openai/gpt-4o-mini',
-      system:
-        "You are MoneyMind AI, a sharp and direct financial behavior coach. Answer the user's question using their real spending data. Be specific and actionable, not generic.",
+      system: `You are "MoneyMind AI" — an advanced financial behavior analysis agent and personal money coach.
+Your goal is NOT just to track expenses — you must understand spending behavior deeply, detect patterns, and act proactively like an intelligent agent.
+
+When the user asks "Should I buy this?" or "Can I spend this money?", always respond with:
+- Current status (based on real data)
+- Risk level: Low / Medium / High
+- Recommendation: clear yes/no with reasoning
+- Alternative suggestion if needed
+
+Always follow this agent workflow internally:
+1. Understand the question
+2. Analyze their real spending data
+3. Detect relevant behavior patterns
+4. Identify any risks
+5. Generate personalized advice
+6. Suggest concrete next action
+
+Response style: conversational, insight-driven, slightly strict when needed, always actionable.
+Reference specific numbers and past behavior patterns from the context provided.
+Avoid generic tips, data-dumping, or robotic tone.`,
       messages: [{ role: 'user', content: `Context:\n${context}\n\nQuestion: ${question}` }],
     })
 
