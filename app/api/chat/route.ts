@@ -6,7 +6,18 @@ import {
   stepCountIs,
 } from 'ai'
 import { z } from 'zod'
-import { getUser, getMonthlyStats, getCategoryBreakdown, getFlaggedTransactions } from '@/lib/db'
+import {
+  getUser,
+  getMonthlyStats,
+  getCategoryBreakdown,
+  getFlaggedTransactions,
+  getTransactions,
+  getWeeklySpending,
+  getDailySpending,
+  getBehaviorInsights,
+  createTransaction,
+  createBehaviorInsight,
+} from '@/lib/db'
 
 export const maxDuration = 60
 
@@ -113,135 +124,225 @@ Help the user:
 - Make smarter spending decisions
 - Reduce unnecessary expenses without feeling restricted`
 
-// Tools for the financial agent
-const tools = {
-  analyzeSpending: tool({
-    description: 'Analyze spending data and return behavioral insights, category breakdown, and personalized recommendations',
-    inputSchema: z.object({
-      transactions: z.array(z.object({
-        amount: z.number(),
-        merchant: z.string(),
-        category: z.string(),
-        date: z.string(),
-      })).describe('List of transactions to analyze'),
-      period: z.string().describe('Time period for analysis (e.g., "this month", "last 30 days")'),
-    }),
-    execute: async ({ transactions, period }) => {
-      const total = transactions.reduce((sum, t) => sum + t.amount, 0)
-      const byCategory: Record<string, number> = {}
-      transactions.forEach(t => {
-        byCategory[t.category] = (byCategory[t.category] || 0) + t.amount
-      })
-      const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
-      return {
-        period,
-        totalSpent: total,
-        categoryBreakdown: byCategory,
-        topSpendingCategory: topCategory?.[0] ?? 'Unknown',
-        topCategoryAmount: topCategory?.[1] ?? 0,
-        transactionCount: transactions.length,
-        averageTransactionSize: total / transactions.length,
-        insight: `You spent $${total.toFixed(2)} across ${transactions.length} transactions in ${period}. Highest spending in ${topCategory?.[0]} at $${topCategory?.[1]?.toFixed(2)}.`,
-      }
-    },
-  }),
-  detectAnomalies: tool({
-    description: 'Detect unusual spending patterns and flag suspicious or unexpected transactions',
-    inputSchema: z.object({
-      transactions: z.array(z.object({
-        amount: z.number(),
-        merchant: z.string(),
-        category: z.string(),
-        date: z.string(),
-      })),
-      averageMonthlySpend: z.number().describe('User average monthly spend for comparison'),
-    }),
-    execute: async ({ transactions, averageMonthlySpend }) => {
-      const anomalies = transactions.filter(t => t.amount > averageMonthlySpend * 0.15)
-      const lateNight = transactions.filter(t => {
-        const hour = new Date(t.date).getHours()
-        return hour >= 22 || hour <= 4
-      })
-      return {
-        unusualTransactions: anomalies.length,
-        flaggedItems: anomalies.map(t => ({ merchant: t.merchant, amount: t.amount, reason: 'High single transaction' })),
-        lateNightTransactions: lateNight.length,
-        anomalyScore: Math.min(100, (anomalies.length / transactions.length) * 100 + lateNight.length * 5),
-        summary: `Detected ${anomalies.length} unusual transactions and ${lateNight.length} late-night purchases.`,
-      }
-    },
-  }),
-  predictMonthlySpend: tool({
-    description: 'Predict end-of-month spending based on current pace and historical patterns',
-    inputSchema: z.object({
-      currentSpend: z.number().describe('Amount spent so far this month'),
-      daysElapsed: z.number().describe('Days elapsed in the current month'),
-      daysInMonth: z.number().describe('Total days in current month'),
-      historicalAverage: z.number().describe('Historical monthly average'),
-    }),
-    execute: async ({ currentSpend, daysElapsed, daysInMonth, historicalAverage }) => {
-      const dailyRate = currentSpend / daysElapsed
-      const projectedTotal = dailyRate * daysInMonth
-      const variance = ((projectedTotal - historicalAverage) / historicalAverage) * 100
-      const status = variance > 20 ? 'danger' : variance > 10 ? 'warning' : 'on-track'
-      return {
-        projectedMonthlySpend: projectedTotal,
-        historicalAverage,
-        variance: variance.toFixed(1),
-        status,
-        daysRemaining: daysInMonth - daysElapsed,
-        remainingBudget: historicalAverage - currentSpend,
-        message: status === 'danger'
-          ? `Warning: You are on pace to spend $${projectedTotal.toFixed(2)} this month, which is ${variance.toFixed(1)}% above your average. Consider cutting back immediately.`
-          : status === 'warning'
-          ? `Caution: Projected spend of $${projectedTotal.toFixed(2)} is slightly above your $${historicalAverage} average.`
-          : `Great job! You are on track to finish the month within your normal spending range.`,
-      }
-    },
-  }),
-  getSavingsSuggestions: tool({
-    description: 'Generate personalized savings suggestions based on spending patterns',
-    inputSchema: z.object({
-      topCategories: z.array(z.object({
-        category: z.string(),
-        amount: z.number(),
-        frequency: z.number(),
-      })),
-      monthlyIncome: z.number().nullable().describe('User monthly income if known'),
-    }),
-    execute: async ({ topCategories, monthlyIncome }) => {
-      const suggestions = topCategories.map(cat => {
-        const saving = cat.amount * 0.2
-        return {
-          category: cat.category,
-          currentSpend: cat.amount,
-          potentialSaving: saving,
-          tip: getSavingTip(cat.category),
-        }
-      })
-      const totalPotentialSavings = suggestions.reduce((sum, s) => sum + s.potentialSaving, 0)
-      return {
-        suggestions,
-        totalPotentialMonthlySavings: totalPotentialSavings,
-        annualSavingsPotential: totalPotentialSavings * 12,
-        savingsRate: monthlyIncome ? ((totalPotentialSavings / monthlyIncome) * 100).toFixed(1) : null,
-      }
-    },
-  }),
-}
+// ─── Live DB tools (MCP-style) ─────────────────────────────────────────────
+// Each tool hits Neon directly so the AI always works with real, up-to-date data.
 
-function getSavingTip(category: string): string {
-  const tips: Record<string, string> = {
-    Food: 'Try meal prepping 3 days a week — this alone can cut food delivery costs by 40%.',
-    Shopping: 'Use a 48-hour rule before any purchase over $50 to avoid impulse buys.',
-    Subscriptions: 'Audit your subscriptions monthly. Most people pay for 2-3 services they rarely use.',
-    Travel: 'Book travel 6-8 weeks in advance and use fare alerts to save 20-30%.',
-    Bills: 'Call your service providers annually to negotiate better rates — it works 60% of the time.',
-    Entertainment: 'Look for free or lower-cost alternatives like library memberships, free events, or streaming bundles.',
-    Investment: 'Great category! Consider automating investments to stay consistent.',
-    Misc: 'Track miscellaneous spending closely — it often hides recurring impulse purchases.',
-  }
-  return tips[category] ?? 'Review this category for opportunities to reduce spending by 15-20%.'
+const tools = {
+  // Pull live monthly stats from DB
+  get_monthly_stats: tool({
+    description: 'Fetch real-time monthly spending stats for a user: total spent, transaction count, flagged count, projected month-end spend.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1).describe('User ID (default: 1 for current user)'),
+    }),
+    execute: async ({ user_id }) => {
+      const [stats, user] = await Promise.all([getMonthlyStats(user_id), getUser(user_id)])
+      const day = new Date().getDate()
+      const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+      const projected = day > 0 ? ((Number(stats.total_spent) / day) * daysInMonth).toFixed(2) : '0.00'
+      const budget = user?.monthly_budget ?? 0
+      const income = user?.monthly_income ?? 0
+      return {
+        user: user?.name,
+        monthly_budget: budget,
+        monthly_income: income,
+        total_spent: stats.total_spent,
+        transaction_count: stats.transaction_count,
+        flagged_count: stats.flagged_count,
+        flagged_amount: stats.flagged_amount,
+        day_of_month: day,
+        days_in_month: daysInMonth,
+        projected_month_end: projected,
+        budget_remaining: (budget - Number(stats.total_spent)).toFixed(2),
+        pace: Number(projected) > budget ? 'over-budget' : 'on-track',
+      }
+    },
+  }),
+
+  // Pull live category breakdown
+  get_category_breakdown: tool({
+    description: 'Fetch real category-by-category spending totals from the database for the last N days.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      days: z.number().int().min(1).max(365).default(30).describe('Look-back window in days'),
+    }),
+    execute: async ({ user_id, days }) => {
+      const rows = await getCategoryBreakdown(user_id, days)
+      return { categories: rows, period_days: days }
+    },
+  }),
+
+  // Pull recent transactions
+  get_recent_transactions: tool({
+    description: 'Fetch the most recent real transactions for a user from the database.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      limit: z.number().int().min(1).max(100).default(15),
+    }),
+    execute: async ({ user_id, limit }) => {
+      const rows = await getTransactions(user_id, limit)
+      return { transactions: rows, count: rows.length }
+    },
+  }),
+
+  // Pull flagged transactions
+  get_flagged_transactions: tool({
+    description: 'Fetch flagged transactions (impulse buys, late-night purchases) for a user from the live database.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      limit: z.number().int().min(1).max(50).default(10),
+    }),
+    execute: async ({ user_id, limit }) => {
+      const rows = await getFlaggedTransactions(user_id, limit)
+      const lateNight = rows.filter(t => t.flag_reason === 'late-night')
+      const impulse = rows.filter(t => t.flag_reason === 'impulse')
+      return {
+        total_flagged: rows.length,
+        late_night_count: lateNight.length,
+        impulse_count: impulse.length,
+        transactions: rows,
+      }
+    },
+  }),
+
+  // Pull weekly trend
+  get_weekly_trend: tool({
+    description: 'Fetch the 8-week spending trend for a user to identify rising or falling patterns.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+    }),
+    execute: async ({ user_id }) => {
+      const rows = await getWeeklySpending(user_id)
+      if (rows.length >= 2) {
+        const latest = Number(rows[rows.length - 1].amount)
+        const prev = Number(rows[rows.length - 2].amount)
+        const change = prev > 0 ? (((latest - prev) / prev) * 100).toFixed(1) : '0'
+        return { weeks: rows, latest_week: latest, previous_week: prev, week_over_week_change: `${change}%` }
+      }
+      return { weeks: rows }
+    },
+  }),
+
+  // Pull daily spending
+  get_daily_spending: tool({
+    description: 'Fetch day-by-day spending for the last N days to spot daily habits.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      days: z.number().int().min(1).max(30).default(7),
+    }),
+    execute: async ({ user_id, days }) => {
+      const rows = await getDailySpending(user_id, days)
+      return { days: rows }
+    },
+  }),
+
+  // Pull behavior insights
+  get_behavior_insights: tool({
+    description: 'Fetch existing AI-generated behavioral insights for a user (patterns, anomalies, forecasts).',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+    }),
+    execute: async ({ user_id }) => {
+      const rows = await getBehaviorInsights(user_id)
+      const byType = rows.reduce<Record<string, number>>((acc, r) => {
+        acc[r.type] = (acc[r.type] ?? 0) + 1
+        return acc
+      }, {})
+      return { total: rows.length, by_type: byType, insights: rows }
+    },
+  }),
+
+  // Save a new insight generated during conversation
+  save_insight: tool({
+    description: 'Persist a newly detected behavioral insight to the database so it appears in the user dashboard.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      type: z.enum(['pattern', 'anomaly', 'trend', 'forecast', 'positive']),
+      title: z.string().min(1),
+      description: z.string().min(1),
+      action: z.string().optional().describe('Actionable recommendation for the user'),
+      severity: z.enum(['info', 'warning', 'danger']),
+    }),
+    execute: async ({ user_id, type, title, description, action, severity }) => {
+      const insight = await createBehaviorInsight({ user_id, type, title, description, action: action ?? null, severity })
+      return { saved: true, insight }
+    },
+  }),
+
+  // Log a transaction mentioned in chat
+  log_transaction: tool({
+    description: 'Record a transaction the user mentions in conversation. Auto-flags as late-night if time is between 10pm-4am.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      amount: z.number().positive(),
+      merchant: z.string().min(1),
+      category: z.enum(['Food', 'Shopping', 'Bills', 'Travel', 'Subscriptions', 'Investment', 'Transport', 'Misc']),
+      note: z.string().optional(),
+    }),
+    execute: async ({ user_id, amount, merchant, category, note }) => {
+      const now = new Date()
+      const hour = now.getHours()
+      const isLateNight = hour >= 22 || hour <= 4
+      const tx = await createTransaction({
+        user_id, amount, merchant, category,
+        date: now.toISOString(),
+        note: note ?? null,
+        is_flagged: isLateNight,
+        flag_reason: isLateNight ? 'late-night' : null,
+      })
+      return {
+        saved: true,
+        flagged: isLateNight,
+        flag_reason: isLateNight ? 'late-night' : null,
+        transaction: tx,
+      }
+    },
+  }),
+
+  // Compute purchase decision analysis
+  evaluate_purchase: tool({
+    description: 'Evaluate whether a user should make a specific purchase. Fetches live budget data and returns risk level + recommendation.',
+    inputSchema: z.object({
+      user_id: z.number().int().positive().default(1),
+      purchase_amount: z.number().positive().describe('Amount of the potential purchase'),
+      merchant: z.string().describe('Where they want to spend'),
+      category: z.string().describe('Category of the purchase'),
+    }),
+    execute: async ({ user_id, purchase_amount, merchant, category }) => {
+      const [stats, user, categories] = await Promise.all([
+        getMonthlyStats(user_id),
+        getUser(user_id),
+        getCategoryBreakdown(user_id, 30),
+      ])
+      const budget = Number(user?.monthly_budget ?? 0)
+      const spent = Number(stats.total_spent)
+      const remaining = budget - spent
+      const categorySpend = categories.find(c => c.category === category)
+      const purchasePercent = budget > 0 ? ((purchase_amount / budget) * 100).toFixed(1) : '0'
+      const newTotal = spent + purchase_amount
+      const wouldExceed = newTotal > budget
+
+      const risk = wouldExceed ? 'high' : purchase_amount > remaining * 0.5 ? 'medium' : 'low'
+      const recommendation = wouldExceed
+        ? `Avoid — this $${purchase_amount} purchase would push you $${(newTotal - budget).toFixed(2)} over your $${budget} budget.`
+        : risk === 'medium'
+        ? `Caution — this represents ${purchasePercent}% of your monthly budget with only $${remaining.toFixed(2)} left.`
+        : `This $${purchase_amount} purchase looks manageable. You have $${remaining.toFixed(2)} remaining this month.`
+
+      return {
+        purchase_amount,
+        merchant,
+        category,
+        current_spent: spent,
+        monthly_budget: budget,
+        budget_remaining: remaining.toFixed(2),
+        category_spend_this_month: categorySpend?.total ?? 0,
+        purchase_as_percent_of_budget: purchasePercent,
+        would_exceed_budget: wouldExceed,
+        risk_level: risk,
+        recommendation,
+      }
+    },
+  }),
 }
 
 export async function POST(req: Request) {
