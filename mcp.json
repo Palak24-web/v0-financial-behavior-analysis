@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/main/schema/mcp.json",
+  "name": "moneymind-financial-agent",
+  "version": "1.0.0",
+  "description": "MoneyMind AI — real-time financial behavior analysis MCP server. Exposes live Neon DB tools for transaction analysis, behavior detection, budget coaching, and admin analytics.",
+  "transport": {
+    "type": "http",
+    "url": "http://localhost:3000/api/mcp"
+  },
+  "tools": [
+    {
+      "name": "get_user_profile",
+      "description": "Retrieve a user profile including name, email, monthly income, and monthly budget."
+    },
+    {
+      "name": "get_monthly_stats",
+      "description": "Get current-month spending totals, transaction count, flagged count, and projected month-end spend."
+    },
+    {
+      "name": "get_category_breakdown",
+      "description": "Get per-category spending totals and transaction counts over the last N days."
+    },
+    {
+      "name": "get_transactions",
+      "description": "Retrieve the most recent transactions for a user, ordered by date descending."
+    },
+    {
+      "name": "get_flagged_transactions",
+      "description": "Get flagged transactions — impulse buys and late-night purchases — for a user."
+    },
+    {
+      "name": "get_weekly_spending",
+      "description": "Get weekly spending totals for the last 8 weeks for trend analysis."
+    },
+    {
+      "name": "get_daily_spending",
+      "description": "Get day-by-day spending totals for the last N days to identify daily habits."
+    },
+    {
+      "name": "get_behavior_insights",
+      "description": "Retrieve all AI-generated behavioral insights for a user (patterns, anomalies, trends, forecasts)."
+    },
+    {
+      "name": "create_transaction",
+      "description": "Insert a new transaction. Auto-flags as late-night if time is between 22:00–04:59."
+    },
+    {
+      "name": "create_behavior_insight",
+      "description": "Save a new behavioral insight for a user — pattern, anomaly, trend, forecast, or positive."
+    },
+    {
+      "name": "get_admin_overview",
+      "description": "Platform-wide aggregate statistics: total users, transactions, volume, and insight counts."
+    },
+    {
+      "name": "get_admin_leaderboard",
+      "description": "Per-user spending leaderboard with transaction counts, flagged items, and insight counts."
+    },
+    {
+      "name": "get_admin_flagged_report",
+      "description": "Full report of all flagged transactions across all users (latest 100)."
+    },
+    {
+      "name": "get_admin_spending_trend",
+      "description": "Platform-wide daily spending trend (total volume + flagged count) for the last N days."
+    }
+  ]
+}
