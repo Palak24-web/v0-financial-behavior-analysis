@@ -28,13 +28,10 @@ export default function OnboardingPage() {
   const [userId, setUserId] = useState<number | null>(null)
 
   useEffect(() => {
-    fetch('/api/auth/session')
+    fetch('/api/auth/session', { credentials: 'include' })
       .then(r => r.json())
-      .then(d => {
-        console.log('[v0] onboarding page — session fetched:', d.user?.id)
-        if (d.user?.id) setUserId(d.user.id)
-      })
-      .catch(err => { console.log('[v0] onboarding page — session fetch error:', err) })
+      .then(d => { if (d.user?.id) setUserId(d.user.id) })
+      .catch(() => {})
   }, [])
 
   const addTx = () => setTransactions(t => [...t, emptyTx()])
@@ -49,13 +46,11 @@ export default function OnboardingPage() {
       // Re-fetch userId fresh if not yet resolved
       let uid = userId
       if (!uid) {
-        const r = await fetch('/api/auth/session')
+        const r = await fetch('/api/auth/session', { credentials: 'include' })
         const d = await r.json()
         uid = d.user?.id ?? null
         if (uid) setUserId(uid)
       }
-
-      console.log('[v0] onboarding submit — skipAll:', skipAll, 'uid:', uid, 'income:', income, 'budget:', budget)
 
       const validTx = skipAll
         ? []
@@ -68,16 +63,15 @@ export default function OnboardingPage() {
         transactions: validTx,
         user_id: uid,
       }
-      console.log('[v0] onboarding submit — payload:', JSON.stringify(payload))
 
       const res = await fetch('/api/auth/onboard', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
 
       const data = await res.json()
-      console.log('[v0] onboarding submit — response:', res.status, data)
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
       window.location.href = '/'
     } catch {

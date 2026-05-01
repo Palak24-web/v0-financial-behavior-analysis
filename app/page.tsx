@@ -88,7 +88,7 @@ export default function Home() {
   const [authLoading, setAuthLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/auth/session')
+    fetch('/api/auth/session', { credentials: 'include' })
       .then(r => r.json())
       .then(data => {
         if (data.user) {
@@ -105,7 +105,7 @@ export default function Home() {
   }, [])
 
   const handleSignOut = async () => {
-    await fetch('/api/auth/signout', { method: 'POST' })
+    await fetch('/api/auth/signout', { method: 'POST', credentials: 'include' })
     window.location.href = '/signin'
   }
 

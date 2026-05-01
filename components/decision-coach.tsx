@@ -94,6 +94,7 @@ export function DecisionCoach({ userId = 1 }: { userId?: number }) {
     try {
       const res = await fetch('/api/decision', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           item: item.trim(),

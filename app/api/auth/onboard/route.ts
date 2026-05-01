@@ -7,19 +7,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { monthly_income, monthly_budget, transactions, user_id: bodyUserId, skip } = body
 
-    console.log('[v0] /api/auth/onboard — bodyUserId:', bodyUserId, 'skip:', skip)
-
     // Try session cookie first; fall back to user_id sent in body (handles race condition after signup)
     let session = await getSession()
-    console.log('[v0] /api/auth/onboard — session from cookie:', session ? `user ${session.id}` : 'null')
-    
     if (!session && bodyUserId) {
       const dbUser = await getUserFromDb(Number(bodyUserId))
-      console.log('[v0] /api/auth/onboard — fallback to bodyUserId, found:', dbUser ? `user ${dbUser.id}` : 'null')
       if (dbUser) session = dbUser
     }
     if (!session) {
-      console.log('[v0] /api/auth/onboard — no session found, returning 401')
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
     }
 
