@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
-import { getSession, createSession, SESSION_COOKIE } from '@/lib/auth'
+import { getSession, getUserFromDb, createSession, SESSION_COOKIE } from '@/lib/auth'
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    const body = await req.json()
+    const { monthly_income, monthly_budget, transactions, user_id: bodyUserId } = body
 
-    const { monthly_income, monthly_budget, transactions } = await req.json()
+    // Try session cookie first; fall back to user_id sent in body (handles race condition after signup)
+    let session = await getSession()
+    if (!session && bodyUserId) {
+      const dbUser = await getUserFromDb(Number(bodyUserId))
+      if (dbUser) session = dbUser
+    }
+    if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     const income = parseFloat(monthly_income)
     const budget = parseFloat(monthly_budget)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Brain, DollarSign, Plus, Trash2, ArrowRight, ChevronRight } from 'lucide-react'
 
 const CATEGORIES = ['Food', 'Shopping', 'Bills', 'Travel', 'Subscriptions', 'Investment', 'Transport', 'Misc']
@@ -25,6 +25,15 @@ export default function OnboardingPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([emptyTx()])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [userId, setUserId] = useState<number | null>(null)
+
+  // Fetch session to get user_id — falls back to body param on the API side
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then(r => r.json())
+      .then(data => { if (data.user?.id) setUserId(data.user.id) })
+      .catch(() => {})
+  }, [])
 
   const addTx = () => setTransactions(t => [...t, emptyTx()])
   const removeTx = (id: string) => setTransactions(t => t.filter(tx => tx.id !== id))
@@ -44,6 +53,7 @@ export default function OnboardingPage() {
           monthly_income: income,
           monthly_budget: budget,
           transactions: validTx,
+          ...(userId ? { user_id: userId } : {}),
         }),
       })
       const data = await res.json()
