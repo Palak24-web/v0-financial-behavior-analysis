@@ -30,8 +30,11 @@ export default function OnboardingPage() {
   useEffect(() => {
     fetch('/api/auth/session')
       .then(r => r.json())
-      .then(d => { if (d.user?.id) setUserId(d.user.id) })
-      .catch(() => {})
+      .then(d => {
+        console.log('[v0] onboarding page — session fetched:', d.user?.id)
+        if (d.user?.id) setUserId(d.user.id)
+      })
+      .catch(err => { console.log('[v0] onboarding page — session fetch error:', err) })
   }, [])
 
   const addTx = () => setTransactions(t => [...t, emptyTx()])
@@ -52,23 +55,29 @@ export default function OnboardingPage() {
         if (uid) setUserId(uid)
       }
 
+      console.log('[v0] onboarding submit — skipAll:', skipAll, 'uid:', uid, 'income:', income, 'budget:', budget)
+
       const validTx = skipAll
         ? []
         : transactions.filter(tx => tx.merchant && tx.amount && parseFloat(tx.amount) > 0)
 
+      const payload = {
+        skip: skipAll,
+        monthly_income: income || '0',
+        monthly_budget: budget || '0',
+        transactions: validTx,
+        user_id: uid,
+      }
+      console.log('[v0] onboarding submit — payload:', JSON.stringify(payload))
+
       const res = await fetch('/api/auth/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          skip: skipAll,
-          monthly_income: income || '0',
-          monthly_budget: budget || '0',
-          transactions: validTx,
-          user_id: uid,
-        }),
+        body: JSON.stringify(payload),
       })
 
       const data = await res.json()
+      console.log('[v0] onboarding submit — response:', res.status, data)
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
       window.location.href = '/'
     } catch {

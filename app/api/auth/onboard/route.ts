@@ -5,21 +5,36 @@ import { getSession, getUserFromDb, createSession, SESSION_COOKIE } from '@/lib/
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { monthly_income, monthly_budget, transactions, user_id: bodyUserId } = body
+    const { monthly_income, monthly_budget, transactions, user_id: bodyUserId, skip } = body
+
+    console.log('[v0] /api/auth/onboard — bodyUserId:', bodyUserId, 'skip:', skip)
 
     // Try session cookie first; fall back to user_id sent in body (handles race condition after signup)
     let session = await getSession()
+    console.log('[v0] /api/auth/onboard — session from cookie:', session ? `user ${session.id}` : 'null')
+    
     if (!session && bodyUserId) {
       const dbUser = await getUserFromDb(Number(bodyUserId))
+      console.log('[v0] /api/auth/onboard — fallback to bodyUserId, found:', dbUser ? `user ${dbUser.id}` : 'null')
       if (dbUser) session = dbUser
     }
-    if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    if (!session) {
+      console.log('[v0] /api/auth/onboard — no session found, returning 401')
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    }
 
-    const income = parseFloat(monthly_income)
-    const budget = parseFloat(monthly_budget)
-
-    if (!income || !budget || income <= 0 || budget <= 0) {
-      return NextResponse.json({ error: 'Valid income and budget are required' }, { status: 400 })
+    // If skip is true, set default values; otherwise validate
+    let income: number
+    let budget: number
+    if (skip) {
+      income = 0
+      budget = 0
+    } else {
+      income = parseFloat(monthly_income)
+      budget = parseFloat(monthly_budget)
+      if (!income || !budget || income <= 0 || budget <= 0) {
+        return NextResponse.json({ error: 'Valid income and budget are required' }, { status: 400 })
+      }
     }
 
     const sql = neon(process.env.DATABASE_URL!)
