@@ -40,18 +40,20 @@ export default function OnboardingPage() {
   const updateTx = (id: string, field: keyof Transaction, value: string) =>
     setTransactions(t => t.map(tx => tx.id === id ? { ...tx, [field]: value } : tx))
 
-  const handleFinish = async () => {
-    if (!income || !budget) { setError('Please enter your income and budget'); return }
+  const handleFinish = async (skipData = false) => {
+    if (!skipData && (!income || !budget)) { setError('Please enter your income and budget'); return }
     setLoading(true)
     setError('')
     try {
-      const validTx = transactions.filter(tx => tx.merchant && tx.amount && parseFloat(tx.amount) > 0)
+      const validTx = skipData
+        ? []
+        : transactions.filter(tx => tx.merchant && tx.amount && parseFloat(tx.amount) > 0)
       const res = await fetch('/api/auth/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          monthly_income: income,
-          monthly_budget: budget,
+          monthly_income: skipData ? '0' : income,
+          monthly_budget: skipData ? '0' : budget,
           transactions: validTx,
           ...(userId ? { user_id: userId } : {}),
         }),
@@ -65,6 +67,8 @@ export default function OnboardingPage() {
       setLoading(false)
     }
   }
+
+  const handleSkip = () => handleFinish(true)
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -240,7 +244,7 @@ export default function OnboardingPage() {
                   Back
                 </button>
                 <button
-                  onClick={handleFinish}
+                  onClick={() => handleFinish(false)}
                   disabled={loading}
                   className="flex-1 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60"
                 >
@@ -253,7 +257,7 @@ export default function OnboardingPage() {
               </div>
 
               <button
-                onClick={handleFinish}
+                onClick={handleSkip}
                 disabled={loading}
                 className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
               >
