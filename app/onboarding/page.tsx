@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Brain, DollarSign, Plus, Trash2, ArrowRight, ChevronRight } from 'lucide-react'
+import { Brain, DollarSign, Plus, Trash2, ArrowRight, ChevronRight, SkipForward } from 'lucide-react'
 
 const CATEGORIES = ['Food', 'Shopping', 'Bills', 'Travel', 'Subscriptions', 'Investment', 'Transport', 'Misc']
 
@@ -15,7 +15,7 @@ type Transaction = {
 
 const emptyTx = (): Transaction => ({
   id: Math.random().toString(36).slice(2),
-  merchant: '', amount: '', category: 'Food', note: ''
+  merchant: '', amount: '', category: 'Food', note: '',
 })
 
 export default function OnboardingPage() {
@@ -27,11 +27,10 @@ export default function OnboardingPage() {
   const [error, setError] = useState('')
   const [userId, setUserId] = useState<number | null>(null)
 
-  // Fetch session to get user_id — falls back to body param on the API side
   useEffect(() => {
     fetch('/api/auth/session')
       .then(r => r.json())
-      .then(data => { if (data.user?.id) setUserId(data.user.id) })
+      .then(d => { if (d.user?.id) setUserId(d.user.id) })
       .catch(() => {})
   }, [])
 
@@ -40,26 +39,37 @@ export default function OnboardingPage() {
   const updateTx = (id: string, field: keyof Transaction, value: string) =>
     setTransactions(t => t.map(tx => tx.id === id ? { ...tx, [field]: value } : tx))
 
-  const handleFinish = async (skipData = false) => {
-    if (!skipData && (!income || !budget)) { setError('Please enter your income and budget'); return }
+  const submit = async (skipAll: boolean) => {
     setLoading(true)
     setError('')
     try {
-      const validTx = skipData
+      // Re-fetch userId fresh if not yet resolved
+      let uid = userId
+      if (!uid) {
+        const r = await fetch('/api/auth/session')
+        const d = await r.json()
+        uid = d.user?.id ?? null
+        if (uid) setUserId(uid)
+      }
+
+      const validTx = skipAll
         ? []
         : transactions.filter(tx => tx.merchant && tx.amount && parseFloat(tx.amount) > 0)
+
       const res = await fetch('/api/auth/onboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          monthly_income: skipData ? '0' : income,
-          monthly_budget: skipData ? '0' : budget,
+          skip: skipAll,
+          monthly_income: income || '0',
+          monthly_budget: budget || '0',
           transactions: validTx,
-          ...(userId ? { user_id: userId } : {}),
+          user_id: uid,
         }),
       })
+
       const data = await res.json()
-      if (!res.ok) { setError(data.error); return }
+      if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
       window.location.href = '/'
     } catch {
       setError('Something went wrong. Please try again.')
@@ -68,12 +78,20 @@ export default function OnboardingPage() {
     }
   }
 
-  const handleSkip = () => handleFinish(true)
+  const handleContinue = () => {
+    if (!income || !budget) { setError('Please fill in both fields'); return }
+    setError('')
+    setStep(2)
+  }
+
+  const handleLaunch = () => submit(false)
+  const handleSkip = () => submit(true)
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="w-full max-w-lg">
-        {/* Header */}
+
+        {/* Logo */}
         <div className="flex items-center gap-2 mb-8">
           <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
             <Brain className="w-5 h-5 text-primary-foreground" />
@@ -87,9 +105,7 @@ export default function OnboardingPage() {
             <div key={s} className="flex items-center gap-2">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                 step >= s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
-              }`}>
-                {s}
-              </div>
+              }`}>{s}</div>
               {s < 2 && <div className={`w-16 h-0.5 transition-all ${step > s ? 'bg-primary' : 'bg-border'}`} />}
             </div>
           ))}
@@ -99,16 +115,27 @@ export default function OnboardingPage() {
         </div>
 
         <div className="bg-surface border border-border rounded-2xl p-8">
+
           {error && (
-            <div className="bg-red-500/8 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl mb-5">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl mb-5">
               {error}
             </div>
           )}
 
-          {/* Step 1 — Financial Profile */}
+          {/* ── Step 1: Financial Profile ── */}
           {step === 1 && (
             <div>
-              <h2 className="text-xl font-bold text-foreground">Set up your financial profile</h2>
+              <div className="flex items-start justify-between mb-1">
+                <h2 className="text-xl font-bold text-foreground">Set up your financial profile</h2>
+                <button
+                  onClick={handleSkip}
+                  disabled={loading}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors ml-4 mt-1 flex-shrink-0"
+                >
+                  <SkipForward className="w-3.5 h-3.5" />
+                  Skip setup
+                </button>
+              </div>
               <p className="text-sm text-muted-foreground mt-1 mb-6">
                 This helps MoneyMind AI coach you based on your real budget.
               </p>
@@ -119,11 +146,8 @@ export default function OnboardingPage() {
                   <div className="relative">
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
-                      type="number"
-                      min="0"
-                      step="100"
-                      value={income}
-                      onChange={e => setIncome(e.target.value)}
+                      type="number" min="0" step="100"
+                      value={income} onChange={e => setIncome(e.target.value)}
                       placeholder="5000"
                       className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
                     />
@@ -132,15 +156,12 @@ export default function OnboardingPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-foreground">Monthly Budget / Spending Limit</label>
+                  <label className="text-sm font-medium text-foreground">Monthly Spending Limit</label>
                   <div className="relative">
                     <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <input
-                      type="number"
-                      min="0"
-                      step="100"
-                      value={budget}
-                      onChange={e => setBudget(e.target.value)}
+                      type="number" min="0" step="100"
+                      value={budget} onChange={e => setBudget(e.target.value)}
                       placeholder="3000"
                       className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition-colors"
                     />
@@ -148,26 +169,22 @@ export default function OnboardingPage() {
                   <p className="text-xs text-muted-foreground">How much you want to spend each month</p>
                 </div>
 
-                {income && budget && (
+                {income && budget && parseFloat(income) > 0 && parseFloat(budget) > 0 && (
                   <div className="bg-primary/5 border border-primary/15 rounded-xl p-4">
                     <p className="text-sm text-foreground font-medium">Savings target</p>
                     <p className="text-2xl font-bold text-primary mt-0.5">
-                      ${(parseFloat(income) - parseFloat(budget)).toFixed(0)}
+                      ${Math.max(0, parseFloat(income) - parseFloat(budget)).toFixed(0)}
                       <span className="text-sm font-normal text-muted-foreground">/mo</span>
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {((1 - parseFloat(budget) / parseFloat(income)) * 100).toFixed(0)}% savings rate
+                      {Math.max(0, ((1 - parseFloat(budget) / parseFloat(income)) * 100)).toFixed(0)}% savings rate
                     </p>
                   </div>
                 )}
               </div>
 
               <button
-                onClick={() => {
-                  if (!income || !budget) { setError('Please fill in both fields'); return }
-                  setError('')
-                  setStep(2)
-                }}
+                onClick={handleContinue}
                 className="w-full mt-6 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity"
               >
                 Continue <ChevronRight className="w-4 h-4" />
@@ -175,12 +192,12 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 2 — Seed Transactions */}
+          {/* ── Step 2: Seed Transactions ── */}
           {step === 2 && (
             <div>
               <h2 className="text-xl font-bold text-foreground">Add your recent spending</h2>
               <p className="text-sm text-muted-foreground mt-1 mb-6">
-                Add transactions from this month so AI can analyze your behavior right away. You can skip this and add later.
+                Optional — add a few transactions so AI can analyze your habits right away.
               </p>
 
               <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
@@ -204,9 +221,7 @@ export default function OnboardingPage() {
                       <div className="relative">
                         <DollarSign className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
                         <input
-                          type="number"
-                          placeholder="Amount"
-                          value={tx.amount}
+                          type="number" placeholder="Amount" value={tx.amount}
                           onChange={e => updateTx(tx.id, 'amount', e.target.value)}
                           className="w-full bg-surface border border-border rounded-lg pl-6 pr-2 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                         />
@@ -219,8 +234,7 @@ export default function OnboardingPage() {
                         {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                       </select>
                       <input
-                        placeholder="Note (optional)"
-                        value={tx.note}
+                        placeholder="Note (optional)" value={tx.note}
                         onChange={e => updateTx(tx.id, 'note', e.target.value)}
                         className="col-span-2 bg-surface border border-border rounded-lg px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                       />
@@ -244,7 +258,7 @@ export default function OnboardingPage() {
                   Back
                 </button>
                 <button
-                  onClick={() => handleFinish(false)}
+                  onClick={handleLaunch}
                   disabled={loading}
                   className="flex-1 bg-primary text-primary-foreground rounded-xl py-2.5 text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-60"
                 >
@@ -259,13 +273,18 @@ export default function OnboardingPage() {
               <button
                 onClick={handleSkip}
                 disabled={loading}
-                className="w-full mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+                className="w-full mt-3 flex items-center justify-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors py-2 border border-transparent hover:border-border rounded-xl"
               >
-                Skip for now, I&apos;ll add transactions later
+                <SkipForward className="w-4 h-4" />
+                Skip — go to dashboard without adding transactions
               </button>
             </div>
           )}
         </div>
+
+        <p className="text-center text-xs text-muted-foreground mt-6">
+          You can always update your data from the dashboard settings.
+        </p>
       </div>
     </div>
   )
