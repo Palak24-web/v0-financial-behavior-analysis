@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Brain, LayoutDashboard, MessageSquare, Code2, TrendingUp, Shield, Zap, ChevronRight, LogOut, User, Sparkles, ExternalLink } from 'lucide-react'
 import { Dashboard } from '@/components/dashboard'
 import { Chatbot } from '@/components/chatbot'
@@ -84,7 +83,6 @@ function ApiDocs() {
 }
 
 export default function Home() {
-  const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [user, setUser] = useState<SessionUser | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
@@ -95,22 +93,23 @@ export default function Home() {
       .then(data => {
         if (data.user) {
           setUser(data.user)
-          if (!data.user.onboarded) router.push('/onboarding')
+          if (!data.user.onboarded) {
+            window.location.href = '/onboarding'
+          }
         } else {
-          router.push('/signin')
+          window.location.href = '/signin'
         }
       })
-      .catch(() => router.push('/signin'))
+      .catch(() => { window.location.href = '/signin' })
       .finally(() => setAuthLoading(false))
-  }, [router])
+  }, [])
 
   const handleSignOut = async () => {
     await fetch('/api/auth/signout', { method: 'POST' })
-    router.push('/signin')
-    router.refresh()
+    window.location.href = '/signin'
   }
 
-  if (authLoading || !user) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -122,6 +121,8 @@ export default function Home() {
       </div>
     )
   }
+
+  if (!user) return null
 
   return (
     <div className="min-h-screen bg-background font-sans">

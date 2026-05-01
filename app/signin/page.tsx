@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Brain, Eye, EyeOff, ArrowRight, TrendingUp } from 'lucide-react'
 
 export default function SignInPage() {
-  const router = useRouter()
   const [form, setForm] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -24,8 +22,8 @@ export default function SignInPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error); return }
-      router.push('/')
-      router.refresh()
+      // Hard navigation so the cookie is committed before page.tsx checks session
+      window.location.href = data.user?.onboarded === false ? '/onboarding' : '/'
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

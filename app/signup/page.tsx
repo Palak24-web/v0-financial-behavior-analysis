@@ -1,12 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Brain, Eye, EyeOff, ArrowRight, Check } from 'lucide-react'
 
 export default function SignUpPage() {
-  const router = useRouter()
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -54,7 +52,8 @@ export default function SignUpPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error); return }
-      router.push('/onboarding')
+      // Hard navigation so cookie is committed before next page checks session
+      window.location.href = '/onboarding'
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {

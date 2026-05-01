@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { Brain, DollarSign, Plus, Trash2, ArrowRight, ChevronRight } from 'lucide-react'
 
 const CATEGORIES = ['Food', 'Shopping', 'Bills', 'Travel', 'Subscriptions', 'Investment', 'Transport', 'Misc']
@@ -20,7 +19,6 @@ const emptyTx = (): Transaction => ({
 })
 
 export default function OnboardingPage() {
-  const router = useRouter()
   const [step, setStep] = useState(1)
   const [income, setIncome] = useState('')
   const [budget, setBudget] = useState('')
@@ -50,8 +48,7 @@ export default function OnboardingPage() {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error); return }
-      router.push('/')
-      router.refresh()
+      window.location.href = '/'
     } catch {
       setError('Something went wrong. Please try again.')
     } finally {
