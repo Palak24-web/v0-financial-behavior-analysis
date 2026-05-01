@@ -78,6 +78,35 @@ function MessageBubble({
   )
 }
 
+const TOOL_LABELS: Record<string, string> = {
+  getTransactions: 'Fetching your transactions...',
+  getMonthlySummary: 'Loading monthly summary...',
+  getWeeklyTrend: 'Analyzing weekly trend...',
+  getDailyPattern: 'Reading daily habits...',
+  detectBehavior: 'Detecting spending patterns...',
+  getSpendingScore: 'Calculating your score...',
+  decisionCoach: 'Evaluating purchase...',
+  getBehaviorInsights: 'Loading insights...',
+  getUserProfile: 'Loading your profile...',
+  logTransaction: 'Saving transaction...',
+  saveInsight: 'Saving insight...',
+}
+
+function ToolCallBubble({ toolName }: { toolName: string }) {
+  const label = TOOL_LABELS[toolName] ?? `Running ${toolName}...`
+  return (
+    <div className="flex gap-3">
+      <div className="w-8 h-8 rounded-xl bg-secondary border border-border flex items-center justify-center flex-shrink-0">
+        <Bot className="w-4 h-4 text-primary" />
+      </div>
+      <div className="bg-surface border border-primary/20 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2">
+        <div className="w-3.5 h-3.5 rounded-full border-2 border-primary border-t-transparent animate-spin flex-shrink-0" />
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </div>
+    </div>
+  )
+}
+
 function TypingIndicator() {
   return (
     <div className="flex gap-3">
@@ -95,13 +124,26 @@ function TypingIndicator() {
   )
 }
 
-export function Chatbot() {
+export function Chatbot({ userId = 1, userName = 'User' }: { userId?: number; userName?: string }) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  const { messages, sendMessage, status } = useChat({
-    transport: new DefaultChatTransport({ api: '/api/chat' }),
+  const { messages, sendMessage, status, setMessages } = useChat({
+    id: `chat-user-${userId}`,
+    transport: new DefaultChatTransport({
+      api: '/api/chat',
+      prepareSendMessagesRequest: ({ id, messages: msgs }) => ({
+        body: { id, messages: msgs, user_id: userId },
+      }),
+    }),
   })
+
+  // Reset chat when userId changes
+  useEffect(() => {
+    setMessages([])
+    setInput('')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
 
   const isLoading = status === 'streaming' || status === 'submitted'
 
@@ -141,7 +183,7 @@ export function Chatbot() {
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               <span className="text-xs text-muted-foreground">
-                {isLoading ? 'Thinking...' : 'Online · GPT-4o powered'}
+                {isLoading ? 'Thinking...' : `Analyzing ${userName}'s finances`}
               </span>
             </div>
           </div>
@@ -167,11 +209,23 @@ export function Chatbot() {
           </div>
         </div>
 
-        {messages.map((message) => (
-          <MessageBubble key={message.id} role={message.role as 'user' | 'assistant'} parts={message.parts as Array<{ type: string; text?: string }>} />
-        ))}
+        {messages.map((message) => {
+          const parts = message.parts as Array<{ type: string; text?: string; toolName?: string; state?: string }>
+          // Show active tool calls as inline spinners
+          const activeTools = parts.filter(
+            (p) => p.type === 'tool-invocation' && (p.state === 'input-streaming' || p.state === 'input-available')
+          )
+          return (
+            <div key={message.id}>
+              <MessageBubble role={message.role as 'user' | 'assistant'} parts={parts} />
+              {activeTools.map((p, i) => (
+                <ToolCallBubble key={i} toolName={p.toolName ?? ''} />
+              ))}
+            </div>
+          )
+        })}
 
-        {isLoading && <TypingIndicator />}
+        {isLoading && status === 'submitted' && <TypingIndicator />}
         <div ref={messagesEndRef} />
       </div>
 

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/main/schema/mcp.json",
+  "name": "moneymind-financial-agent",
+  "version": "2.0.0",
+  "description": "MoneyMind AI — real-time financial behavior analysis MCP server. Exposes 16 live Neon DB tools for transaction analysis, behavior detection, decision coaching, scoring, and admin analytics.",
+  "transport": {
+    "type": "http",
+    "url": "http://localhost:3000/api/mcp"
+  },
+  "tools": [
+    {
+      "name": "get_user_profile",
+      "description": "Retrieve a user profile including name, email, monthly income, monthly budget, and computed savings rate.",
+      "category": "user"
+    },
+    {
+      "name": "get_monthly_stats",
+      "description": "Get current-month spending totals, transaction count, flagged count, projected month-end spend, and budget remaining.",
+      "category": "user"
+    },
+    {
+      "name": "get_transactions",
+      "description": "Fetch recent transactions enriched with time-of-day tags (late-night / morning / afternoon / evening) for habit detection.",
+      "category": "transactions"
+    },
+    {
+      "name": "get_flagged_transactions",
+      "description": "Get late-night and impulse purchases grouped by flag type with totals.",
+      "category": "transactions"
+    },
+    {
+      "name": "get_category_breakdown",
+      "description": "Get per-category spending totals and transaction counts over a configurable time window.",
+      "category": "transactions"
+    },
+    {
+      "name": "get_weekly_spending",
+      "description": "Get 8-week spending trend with week-over-week % change and direction (increasing / decreasing / stable).",
+      "category": "transactions"
+    },
+    {
+      "name": "get_daily_spending",
+      "description": "Get day-by-day spending totals for the last N days to identify daily habits and weekend spikes.",
+      "category": "transactions"
+    },
+    {
+      "name": "create_transaction",
+      "description": "Insert a new transaction. Automatically flags as late-night if the hour is between 22:00–04:59.",
+      "category": "transactions"
+    },
+    {
+      "name": "detect_behavior",
+      "description": "Run pattern detection across 7 dimensions: late-night habits, food frequency, category overspend, impulse buying, weekly spikes, budget pace, and positive behavior. Optionally saves results to the DB.",
+      "category": "intelligence"
+    },
+    {
+      "name": "get_spending_score",
+      "description": "Calculate a 0–100 financial discipline score with letter grade across 5 weighted factors: budget adherence, impulse control, late-night spending, category concentration, and weekly trend.",
+      "category": "intelligence"
+    },
+    {
+      "name": "decision_coach",
+      "description": "Evaluate whether a user should make a specific purchase. Returns risk level (Low/Medium/High), risk score, recommendation, and alternatives based on live budget data.",
+      "category": "intelligence"
+    },
+    {
+      "name": "save_insight",
+      "description": "Persist a newly detected behavioral insight to the database so it appears on the user dashboard.",
+      "category": "intelligence"
+    },
+    {
+      "name": "get_behavior_insights",
+      "description": "Retrieve all AI-generated behavioral insights for a user (patterns, anomalies, trends, forecasts, positives) grouped by type.",
+      "category": "intelligence"
+    },
+    {
+      "name": "get_admin_overview",
+      "description": "Platform-wide aggregate stats: total users, transaction volume, flagged counts, and insight severity breakdown.",
+      "category": "admin"
+    },
+    {
+      "name": "get_admin_leaderboard",
+      "description": "Per-user spending leaderboard with transaction counts, flagged items, and insight counts for all users.",
+      "category": "admin"
+    },
+    {
+      "name": "get_admin_flagged_report",
+      "description": "The 100 most recent flagged transactions across all users, including user name and email.",
+      "category": "admin"
+    },
+    {
+      "name": "get_admin_spending_trend",
+      "description": "Platform-wide daily spending trend (total volume + flagged count per day) for the last N days.",
+      "category": "admin"
+    }
+  ],
+  "clients": {
+    "claude_desktop": {
+      "config_path": "~/Library/Application Support/Claude/claude_desktop_config.json",
+      "entry": {
+        "moneymind": {
+          "type": "http",
+          "url": "http://localhost:3000/api/mcp"
+        }
+      }
+    },
+    "cursor": {
+      "config_path": "~/.cursor/mcp.json",
+      "entry": {
+        "moneymind": {
+          "type": "http",
+          "url": "http://localhost:3000/api/mcp"
+        }
+      }
+    },
+    "production": {
+      "url": "https://your-deployment.vercel.app/api/mcp",
+      "note": "Replace with your Vercel deployment URL"
+    }
+  }
+}
